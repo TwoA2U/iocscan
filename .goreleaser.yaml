@@ -45,7 +45,7 @@ snapshot:
 
 release:
   github:
-    owner: ""
+    owner: "TwoA2U"
     name: iocscan
 # Changelog auto-generated from Git commits
 changelog:
