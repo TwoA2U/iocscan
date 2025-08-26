@@ -1,0 +1,56 @@
+project_name: iocscan
+version: 2 
+
+before:
+  hooks:
+    - go mod tidy
+    - go mod download
+
+builds:
+  - id: iocscan
+    main: ./main.go
+    binary: iocscan
+    env:
+      - CGO_ENABLED=0          # Disable CGO for static builds
+    flags:
+      - -trimpath              # Remove filesystem paths from binary
+      - -ldflags=-s -w         # Strip debug info & symbols
+    ldflags:
+      # Override version info to prevent leaking builder machine info
+      - "-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}"
+    goos:
+      - windows
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      # Exclude unsupported combinations
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - formats: zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+release:
+  github:
+    owner: ""
+    name: iocscan
+# Changelog auto-generated from Git commits
+changelog:
+  use: git
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
