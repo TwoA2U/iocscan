@@ -126,9 +126,11 @@ go run main.go ips -i 1.1.1.1
 - Add history lookup with data retention for cleaning
 
 ## 🤝 Contributing
-
 PRs welcome!
 For large changes, please open an issue first to discuss.
+
+## 📜 License
+This project is licensed under the [MIT License](./LICENSE)
 
 
 
