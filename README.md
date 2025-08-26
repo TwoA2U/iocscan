@@ -41,13 +41,15 @@ Expand-Archive iocscan.zip -DestinationPath .
 ```
 
 ### From Source
-git clone git@github.com:TwoA2U/iocscan.git
+```bash
+git clone https://github.com/TwoA2U/iocscan.git
 cd iocscan
 go build -o iocscan .
+```
 
 ## ⚡ Usage
 
-### Initiate API
+### Initialize API
 ```
 iocscan.exe -v "Virus total API" -a "AbuseIPDB API" -i "IPapiis API"
 ```
@@ -112,15 +114,21 @@ iocscan/
 └── main.go
 ```
 
-### Project structure:
-```
+### Run Locally
+```bash
 go run main.go ips -i 1.1.1.1
 ```
 
-🚀 Roadmap
+## 🚀 Roadmap
 - Add file & hash scanning against VirusTotal / Hybrid Analysis
 - Support CSV bulk lookups
-- Add JSON/CSV export options
+- Add CSV export options
+- Add history lookup with data retention for cleaning
+
+## 🤝 Contributing
+
+PRs welcome!
+For large changes, please open an issue first to discuss.
 
 
 

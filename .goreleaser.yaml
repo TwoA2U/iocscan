@@ -54,3 +54,7 @@ changelog:
     exclude:
       - '^docs:'
       - '^test:'
+      - 'README'
+      - '^.*README.*$'
+      - Merge pull request
+      - Merge branch
