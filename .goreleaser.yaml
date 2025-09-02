@@ -28,7 +28,7 @@ builds:
  
 upx:
   - enabled: true
-    compress: best   # or "lzma" if you want max compression
+    compress: best
     goos:
       - windows
       - linux
