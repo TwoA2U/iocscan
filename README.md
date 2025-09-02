@@ -120,14 +120,13 @@ go run main.go ips -i 1.1.1.1
 ```
 
 ## 🚀 Roadmap
-- Add history lookup with data retention for cleaning
+- ~~Add history lookup with data retention for cleaning~~
 - IP to Hostnames enrichment
 - Add Multi threading
 - Add domain scanning againts VirusTotal
 - Add file & hash scanning against VirusTotal / Hybrid Analysis
 - Support CSV bulk lookups
 - Add CSV export options
-
 
 ## 🤝 Contributing
 PRs welcome!

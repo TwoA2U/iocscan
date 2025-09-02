@@ -170,6 +170,16 @@ func complex(ipaddr string, keyAbuse string, apiVT string) (string, error) {
 }
 
 func sendVT(ip string, key string) (*APIVTout, error) {
+
+	data := GetValuetDB(ip, "VT_IP")
+	if data != "" {
+		var VTdata APIVTout
+		if err := json.Unmarshal([]byte(data), &VTdata); err != nil {
+			return nil, err
+		}
+		return &VTdata, nil
+	}
+
 	url := fmt.Sprintf("https://%s%s", vt, ip)
 
 	req, err := http.NewRequest("GET", url, nil)
@@ -197,10 +207,28 @@ func sendVT(ip string, key string) (*APIVTout, error) {
 		Undetected: apiResp.Data.Attributes.Last_analysis_stats.Undetected,
 		Harmless:   apiResp.Data.Attributes.Last_analysis_stats.Harmless,
 	}
+	out, err := json.MarshalIndent(slim, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+
+	InsertValueDB(ip, string(out), "VT_IP")
+
 	return &slim, nil
 }
 
 func sendAbuse(ip string, key string) (*APIAbuseout, error) {
+
+	data := GetValuetDB(ip, "Abuse_IP")
+	if data != "" {
+		var Abusedata APIAbuseout
+		if err := json.Unmarshal([]byte(data), &Abusedata); err != nil {
+			return nil, err
+		}
+
+		return &Abusedata, nil
+	}
+
 	base := fmt.Sprintf("https://%s", abuse)
 	u, _ := url.Parse(base)
 	q := u.Query()
@@ -238,10 +266,23 @@ func sendAbuse(ip string, key string) (*APIAbuseout, error) {
 		Isp:                  apiResp.Data.Isp,
 		TotalReports:         apiResp.Data.TotalReports,
 	}
+
+	out, err := json.MarshalIndent(slim, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+
+	InsertValueDB(ip, string(out), "ABUSE_IP")
 	return &slim, nil
 }
 
 func sendipapi(ip string, key string) (string, error) {
+
+	data := GetValuetDB(ip, "IPAPIIS_IP")
+	if data != "" {
+		return data, nil
+	}
+
 	payload := map[string]string{
 		"q":   ip,
 		"key": key,
@@ -283,5 +324,7 @@ func sendipapi(ip string, key string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
+	InsertValueDB(ip, string(out), "IPAPIIS_IP")
 	return string(out) + ",", nil
 }

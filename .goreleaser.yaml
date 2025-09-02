@@ -25,10 +25,14 @@ builds:
     goarch:
       - amd64
       - arm64
-    ignore:
-      # Exclude unsupported combinations
-      - goos: windows
-        goarch: arm64
+ 
+upx:
+  - enabled: true
+    compress: best   # or "lzma" if you want max compression
+    goos:
+      - windows
+      - linux
+
 
 archives:
   - formats: zip
@@ -58,3 +62,5 @@ changelog:
       - '^.*README.*$'
       - Merge pull request
       - Merge branch
+env_files:
+  github_token: .env

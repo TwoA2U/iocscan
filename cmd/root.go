@@ -8,6 +8,7 @@ import (
 
 	"github.com/TwoA2U/iocscan/utils"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var (
@@ -26,6 +27,7 @@ var rootCmd = &cobra.Command{
 	// has an action associated with it:
 	Run: func(cmd *cobra.Command, args []string) {
 		utils.WriteConf(VT_API, Abuse_API, IPapi_API)
+		utils.InitDB()
 	},
 }
 
@@ -43,8 +45,8 @@ func init() {
 	rootCmd.Flags().StringVarP(&IPapi_API, "IPapi_API", "i", "", "IPApi API Key")
 	rootCmd.MarkFlagsRequiredTogether("VT_API", "Abuse_API", "IPapi_API")
 
-	// viper.BindPFlag("VT_API", rootCmd.PersistentFlags().Lookup("VT_API"))
-	// viper.BindPFlag("Abuse_API", rootCmd.PersistentFlags().Lookup("Abuse_API"))
-	// viper.BindPFlag("IPapi_API", rootCmd.PersistentFlags().Lookup("IPapi_API"))
+	viper.BindPFlag("VT_API", rootCmd.PersistentFlags().Lookup("VT_API"))
+	viper.BindPFlag("Abuse_API", rootCmd.PersistentFlags().Lookup("Abuse_API"))
+	viper.BindPFlag("IPapi_API", rootCmd.PersistentFlags().Lookup("IPapi_API"))
 
 }
