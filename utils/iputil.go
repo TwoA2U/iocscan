@@ -1,41 +1,60 @@
+// utils/iputil.go — IP enrichment: ipapi.is, AbuseIPDB, VirusTotal.
+//
+// Single source of truth for all API calls and the Lookup entry point
+// used by both CLI commands and the web handler.
 package utils
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
-	"net/netip"
 	"net/url"
 	"strings"
+	"time"
 )
 
-// Utility struct
-type IPProcessor struct {
-	APIVT        string
-	APIAbuseIPDB string
-	APIipapiis   string
+// ── Shared HTTP client ────────────────────────────────────────────────────────
+
+var httpClient = &http.Client{Timeout: 15 * time.Second}
+
+// doGet performs a GET request and returns the response body.
+func doGet(rawURL string, headers map[string]string) ([]byte, error) {
+	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "iocscan/1.0")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %d from %s", resp.StatusCode, rawURL)
+	}
+	return io.ReadAll(resp.Body)
 }
 
-var (
-	vt      = "www.virustotal.com/api/v3/ip_addresses/"
-	abuse   = "api.abuseipdb.com/api/v2/check"
-	ipapiis = "api.ipapi.is"
+// ── API endpoint constants ────────────────────────────────────────────────────
+
+const (
+	endpointVT      = "https://www.virustotal.com/api/v3/ip_addresses/"
+	endpointAbuse   = "https://api.abuseipdb.com/api/v2/check"
+	endpointIPApiIs = "https://api.ipapi.is"
+
+	// maxIPs limits how many IPs can be submitted in a single request.
+	maxIPs = 100
 )
 
-type APIipapiout struct {
-	Ip          string `json:"ip"`
-	CompanyName string `json:"company_name"`
-	CompanyType string `json:"company_type"`
-	ASNOrg      string `json:"asn_org"`
-	Country     string `json:"country"`
-	State       string `json:"state"`
-	City        string `json:"city"`
-	Timezone    string `json:"timezone"`
-}
+// ── Response structs ──────────────────────────────────────────────────────────
 
-type APIipapiResponse struct {
-	Ip      string `json:"ip"`
+type ipapiResponse struct {
+	IP      string `json:"ip"`
 	Company struct {
 		Name string `json:"name"`
 		Type string `json:"type"`
@@ -51,280 +70,404 @@ type APIipapiResponse struct {
 	} `json:"location"`
 }
 
-type APIAbuseResponse struct {
+// SourceLinks holds direct URLs to third-party intel pages for an IP.
+type SourceLinks struct {
+	IPAPI      string `json:"ipapi"`
+	AbuseIPDB  string `json:"abuseipdb"`
+	VirusTotal string `json:"virustotal"`
+}
+
+func newLinks(ip string) SourceLinks {
+	return SourceLinks{
+		IPAPI:      "https://api.ipapi.is/?q=" + ip,
+		AbuseIPDB:  "https://www.abuseipdb.com/check/" + ip,
+		VirusTotal: "https://www.virustotal.com/gui/ip-address/" + ip,
+	}
+}
+
+// IPSimple is the output of a simple (ipapi.is-only) lookup.
+type IPSimple struct {
+	IP          string      `json:"ip"`
+	CompanyName string      `json:"company_name,omitempty"`
+	CompanyType string      `json:"company_type,omitempty"`
+	ASNOrg      string      `json:"asn_org,omitempty"`
+	Country     string      `json:"country,omitempty"`
+	State       string      `json:"state,omitempty"`
+	City        string      `json:"city,omitempty"`
+	Timezone    string      `json:"timezone,omitempty"`
+	RiskLevel   string      `json:"riskLevel"`
+	Links       SourceLinks `json:"links"`
+}
+
+type abuseResponse struct {
 	Data struct {
-		IPaddress            string   `json:"ipAddress"`
-		Ispublic             bool     `json:"isPublic"`
-		Iswhitelisted        bool     `json:"isWhitelisted"`
+		IPAddress            string   `json:"ipAddress"`
+		IsPublic             bool     `json:"isPublic"`
+		IsWhitelisted        bool     `json:"isWhitelisted"`
 		AbuseConfidenceScore int      `json:"abuseConfidenceScore"`
-		Countrycode          string   `json:"countryCode"`
-		Isp                  string   `json:"isp"`
+		CountryCode          string   `json:"countryCode"`
+		ISP                  string   `json:"isp"`
 		Hostnames            []string `json:"hostnames"`
 		TotalReports         int      `json:"totalReports"`
+		LastReportedAt       string   `json:"lastReportedAt"`
 	} `json:"data"`
 }
 
-type APIAbuseout struct {
-	IPaddress            string   `json:"ipAddress"`
-	Ispublic             bool     `json:"isPublic"`
-	Iswhitelisted        bool     `json:"isWhitelisted"`
+type abuseOut struct {
+	IPAddress            string   `json:"ipAddress"`
+	IsPublic             bool     `json:"isPublic"`
+	IsWhitelisted        bool     `json:"isWhitelisted"`
 	AbuseConfidenceScore int      `json:"abuseConfidenceScore"`
-	Countrycode          string   `json:"countryCode"`
-	Isp                  string   `json:"isp"`
+	CountryCode          string   `json:"countryCode"`
+	ISP                  string   `json:"isp"`
 	Hostnames            []string `json:"hostnames"`
 	TotalReports         int      `json:"totalReports"`
+	LastReportedAt       string   `json:"lastReportedAt"`
 }
 
-type APIVTResponse struct {
+type vtResponse struct {
 	Data struct {
-		IPaddress  string `json:"id"`
+		ID         string `json:"id"`
 		Attributes struct {
-			Last_analysis_stats struct {
+			LastAnalysisStats struct {
 				Malicious  int `json:"malicious"`
 				Suspicious int `json:"suspicious"`
 				Undetected int `json:"undetected"`
 				Harmless   int `json:"harmless"`
 			} `json:"last_analysis_stats"`
+			Reputation int `json:"reputation"`
 		} `json:"attributes"`
 	} `json:"data"`
 }
 
-type APIVTout struct {
-	IPaddress  string `json:"id"`
+type vtOut struct {
+	// FIX: tag is ipAddress (not "id") so cached JSON is consistent with ComplexResult.
+	IPAddress  string `json:"ipAddress"`
 	Malicious  int    `json:"malicious"`
 	Suspicious int    `json:"suspicious"`
 	Undetected int    `json:"undetected"`
 	Harmless   int    `json:"harmless"`
+	Reputation int    `json:"reputation"`
 }
 
-type Complexcheck struct {
-	IPaddress            string   `json:"ipAddress"`
-	Hostnames            []string `json:"hostnames"`
-	Isp                  string   `json:"isp"`
-	Ispublic             bool     `json:"isPublic"`
-	Iswhitelisted        bool     `json:"isWhitelisted"`
-	Countrycode          string   `json:"countryCode"`
-	VTStats_S_U_H        string   `json:"vtStats_S_U_H"`
-	TotalReports         int      `json:"totalReports"`
-	AbuseConfidenceScore int      `json:"abuseConfidenceScore"`
-	VTmalicious          int      `json:"vtMalicious"`
+// ComplexResult is the merged output of a complex (ipc) lookup.
+// FIX: now includes geo fields (City, State, Timezone) from ipapi.is when available.
+type ComplexResult struct {
+	IPAddress            string      `json:"ipAddress"`
+	Hostnames            []string    `json:"hostnames,omitempty"`
+	ISP                  string      `json:"isp,omitempty"`
+	Country              string      `json:"country,omitempty"` // from ipapi.is (richer than countryCode)
+	CountryCode          string      `json:"countryCode,omitempty"`
+	City                 string      `json:"city,omitempty"`
+	State                string      `json:"state,omitempty"`
+	Timezone             string      `json:"timezone,omitempty"`
+	IsPublic             bool        `json:"isPublic"`
+	IsWhitelisted        bool        `json:"isWhitelisted"`
+	TotalReports         int         `json:"totalReports"`
+	AbuseConfidenceScore int         `json:"abuseConfidenceScore"`
+	LastReportedAt       string      `json:"lastReportedAt,omitempty"`
+	VTMalicious          int         `json:"vtMalicious"`
+	VTSuspicious         int         `json:"vtSuspicious"`
+	VTStatsSUH           string      `json:"vtStats_S_U_H"` // suspicious/undetected/harmless
+	VTReputation         int         `json:"vtReputation"`
+	RiskLevel            string      `json:"riskLevel"`
+	Links                SourceLinks `json:"links"`
 }
 
-func Split(r rune) bool {
-	return r == '\r' || r == '\n' || r == ',' || r == ' ' || r == '\t'
+// ── IPProcessor ──────────────────────────────────────────────────────────────
+
+// IPProcessor holds API keys and exposes the Lookup method.
+type IPProcessor struct {
+	vtKey    string
+	abuseKey string
+	ipapiKey string
 }
 
-func CheckIP(ipaddr string) ([]string, error) {
-	processedIp := strings.FieldsFunc(ipaddr, Split)
-	for i := 0; i < len(processedIp); i++ {
-		ip, status := netip.ParseAddr(strings.TrimSpace(processedIp[i]))
-		if status != nil {
-			return nil, status
+// NewIPProcessor constructs an IPProcessor.
+func NewIPProcessor(vtKey, abuseKey, ipapiKey string) *IPProcessor {
+	return &IPProcessor{vtKey: vtKey, abuseKey: abuseKey, ipapiKey: ipapiKey}
+}
+
+// CheckIP parses a comma/newline/space/tab-separated string of IPs,
+// validates each one, and enforces the maxIPs limit.
+func CheckIP(raw string) ([]string, error) {
+	parts := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == '\r' || r == '\n' || r == ',' || r == ' ' || r == '\t'
+	})
+
+	ips := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
 		}
-		processedIp[i] = ip.String()
+		if net.ParseIP(p) == nil {
+			return nil, fmt.Errorf("%q is not a valid IP address", p)
+		}
+		ips = append(ips, p)
 	}
-	return processedIp, nil
+
+	if len(ips) == 0 {
+		return nil, fmt.Errorf("no valid IP addresses provided")
+	}
+	if len(ips) > maxIPs {
+		return nil, fmt.Errorf("too many IPs: %d provided, maximum is %d", len(ips), maxIPs)
+	}
+	return ips, nil
 }
 
-// Constructor
-func NewIPProcessor(VT string, ABuseIPDB string, ipapiis string) *IPProcessor {
-	return &IPProcessor{APIVT: VT, APIAbuseIPDB: ABuseIPDB, APIipapiis: ipapiis}
-}
-
-func (p *IPProcessor) Lookup(ipaddr string, mode string) (string, error) {
+// Lookup queries the appropriate APIs based on mode:
+//   - "simple"  → ipapi.is only
+//   - "complex" → AbuseIPDB + VirusTotal + optional ipapi.is (concurrent)
+//
+// useCache controls whether the SQLite cache is consulted.
+// Returns clean JSON (no trailing comma).
+func (p *IPProcessor) Lookup(ip, mode string, useCache bool) (string, error) {
 	if strings.ToLower(mode) == "simple" {
-		// do request to ipapi only
-		return sendipapi(ipaddr, p.APIipapiis)
-
+		return p.lookupSimple(ip, useCache)
 	}
-	return complex(ipaddr, p.APIAbuseIPDB, p.APIVT)
+	return p.lookupComplex(ip, useCache)
 }
 
-func complex(ipaddr string, keyAbuse string, apiVT string) (string, error) {
-	abusejson, err := sendAbuse(ipaddr, keyAbuse)
-	if err != nil {
-		return "", err
-	}
-	vtjson, err := sendVT(ipaddr, apiVT)
-	if err != nil {
-		return "", err
-	}
-	slim := Complexcheck{
-		IPaddress:            abusejson.IPaddress,
-		Hostnames:            abusejson.Hostnames,
-		Isp:                  abusejson.Isp,
-		Ispublic:             abusejson.Ispublic,
-		Iswhitelisted:        abusejson.Iswhitelisted,
-		Countrycode:          abusejson.Countrycode,
-		VTStats_S_U_H:        fmt.Sprintf("%d/%d/%d", vtjson.Suspicious, vtjson.Undetected, vtjson.Harmless),
-		TotalReports:         abusejson.TotalReports,
-		AbuseConfidenceScore: abusejson.AbuseConfidenceScore,
-		VTmalicious:          vtjson.Malicious,
-	}
-	// Convert to JSON string
-	out, err := json.MarshalIndent(slim, "", "  ")
-	if err != nil {
-		return "", err
-	}
-	return string(out) + ",", nil
-}
+// ── Simple lookup (ipapi.is) ──────────────────────────────────────────────────
 
-func sendVT(ip string, key string) (*APIVTout, error) {
-
-	data := GetValuetDB(ip, "VT_IP")
-	if data != "" {
-		var VTdata APIVTout
-		if err := json.Unmarshal([]byte(data), &VTdata); err != nil {
-			return nil, err
+func (p *IPProcessor) lookupSimple(ip string, useCache bool) (string, error) {
+	if useCache {
+		if cached := getCached(ip, "IPAPIIS_IP"); cached != "" {
+			return cached, nil
 		}
-		return &VTdata, nil
 	}
 
-	url := fmt.Sprintf("https://%s%s", vt, ip)
-
-	req, err := http.NewRequest("GET", url, nil)
+	raw, err := p.fetchIPApi(ip)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	req.Header.Set("x-apikey", key)
 
-	client := &http.Client{}
-	res, err := client.Do(req)
+	out := IPSimple{
+		IP:          raw.IP,
+		CompanyName: raw.Company.Name,
+		CompanyType: raw.Company.Type,
+		ASNOrg:      raw.ASN.Org,
+		Country:     raw.Location.Country,
+		State:       raw.Location.State,
+		City:        raw.Location.City,
+		Timezone:    raw.Location.Timezone,
+		RiskLevel:   "CLEAN", // no abuse/VT data in simple mode
+		Links:       newLinks(ip),
+	}
+
+	j, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	defer res.Body.Close()
-	// Parse API response
-	var apiResp APIVTResponse
-	if err := json.NewDecoder(res.Body).Decode(&apiResp); err != nil {
-		return nil, err
-	}
-	// Map into slim output
-	slim := APIVTout{
-		IPaddress:  apiResp.Data.IPaddress,
-		Malicious:  apiResp.Data.Attributes.Last_analysis_stats.Malicious,
-		Suspicious: apiResp.Data.Attributes.Last_analysis_stats.Suspicious,
-		Undetected: apiResp.Data.Attributes.Last_analysis_stats.Undetected,
-		Harmless:   apiResp.Data.Attributes.Last_analysis_stats.Harmless,
-	}
-	out, err := json.MarshalIndent(slim, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-
-	InsertValueDB(ip, string(out), "VT_IP")
-
-	return &slim, nil
+	putCached(ip, string(j), "IPAPIIS_IP")
+	return string(j), nil
 }
 
-func sendAbuse(ip string, key string) (*APIAbuseout, error) {
+// ── Complex lookup (AbuseIPDB + VirusTotal + ipapi.is, concurrent) ───────────
 
-	data := GetValuetDB(ip, "Abuse_IP")
-	if data != "" {
-		var Abusedata APIAbuseout
-		if err := json.Unmarshal([]byte(data), &Abusedata); err != nil {
-			return nil, err
-		}
+// lookupResult is used to pass results out of goroutines via channels.
+type abuseResult struct {
+	data *abuseOut
+	err  error
+}
+type vtResult struct {
+	data *vtOut
+	err  error
+}
+type geoResult struct {
+	data *ipapiResponse
+	err  error
+}
 
-		return &Abusedata, nil
+func (p *IPProcessor) lookupComplex(ip string, useCache bool) (string, error) {
+	abuseCh := make(chan abuseResult, 1)
+	vtCh := make(chan vtResult, 1)
+	geoCh := make(chan geoResult, 1)
+
+	go func() {
+		d, e := p.fetchAbuse(ip, useCache)
+		abuseCh <- abuseResult{d, e}
+	}()
+	go func() {
+		d, e := p.fetchVT(ip, useCache)
+		vtCh <- vtResult{d, e}
+	}()
+	go func() {
+		// ipapi.is enrichment is optional — only called when a key is configured
+		// or when the free tier is acceptable (key can be empty).
+		d, e := p.fetchIPApi(ip)
+		geoCh <- geoResult{d, e}
+	}()
+
+	ar := <-abuseCh
+	vr := <-vtCh
+	gr := <-geoCh
+
+	if ar.err != nil {
+		return "", fmt.Errorf("AbuseIPDB: %w", ar.err)
+	}
+	if vr.err != nil {
+		return "", fmt.Errorf("VirusTotal: %w", vr.err)
+	}
+	// geo errors are non-fatal — we just skip those fields.
+
+	result := ComplexResult{
+		IPAddress:            ar.data.IPAddress,
+		Hostnames:            ar.data.Hostnames,
+		ISP:                  ar.data.ISP,
+		CountryCode:          ar.data.CountryCode,
+		IsPublic:             ar.data.IsPublic,
+		IsWhitelisted:        ar.data.IsWhitelisted,
+		TotalReports:         ar.data.TotalReports,
+		AbuseConfidenceScore: ar.data.AbuseConfidenceScore,
+		LastReportedAt:       ar.data.LastReportedAt,
+		VTMalicious:          vr.data.Malicious,
+		VTSuspicious:         vr.data.Suspicious,
+		VTStatsSUH:           fmt.Sprintf("%d/%d/%d", vr.data.Suspicious, vr.data.Undetected, vr.data.Harmless),
+		VTReputation:         vr.data.Reputation,
+		RiskLevel:            assessRisk(ar.data.AbuseConfidenceScore, vr.data.Malicious),
+		Links:                newLinks(ip),
 	}
 
-	base := fmt.Sprintf("https://%s", abuse)
-	u, _ := url.Parse(base)
+	// Merge geo data if available.
+	if gr.err == nil && gr.data != nil {
+		result.Country = gr.data.Location.Country
+		result.City = gr.data.Location.City
+		result.State = gr.data.Location.State
+		result.Timezone = gr.data.Location.Timezone
+		// Prefer ISP from AbuseIPDB but fall back to ipapi.is ASN org.
+		if result.ISP == "" {
+			result.ISP = gr.data.ASN.Org
+		}
+	}
+
+	j, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(j), nil
+}
+
+// assessRisk derives a risk level from AbuseIPDB score and VT malicious count.
+func assessRisk(abuseScore, vtMalicious int) string {
+	switch {
+	case abuseScore >= 75 || vtMalicious >= 5:
+		return "CRITICAL"
+	case abuseScore >= 40 || vtMalicious >= 2:
+		return "HIGH"
+	case abuseScore >= 10 || vtMalicious >= 1:
+		return "MEDIUM"
+	case abuseScore > 0:
+		return "LOW"
+	default:
+		return "CLEAN"
+	}
+}
+
+// ── ipapi.is ─────────────────────────────────────────────────────────────────
+
+func (p *IPProcessor) fetchIPApi(ip string) (*ipapiResponse, error) {
+	reqURL := fmt.Sprintf("%s/?q=%s", endpointIPApiIs, url.QueryEscape(ip))
+	if p.ipapiKey != "" {
+		reqURL += "&key=" + url.QueryEscape(p.ipapiKey)
+	}
+
+	body, err := doGet(reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("ipapi.is: %w", err)
+	}
+
+	var raw ipapiResponse
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, fmt.Errorf("ipapi.is parse: %w", err)
+	}
+	return &raw, nil
+}
+
+// ── AbuseIPDB ─────────────────────────────────────────────────────────────────
+
+func (p *IPProcessor) fetchAbuse(ip string, useCache bool) (*abuseOut, error) {
+	if useCache {
+		if cached := getCached(ip, "ABUSE_IP"); cached != "" {
+			var out abuseOut
+			if err := json.Unmarshal([]byte(cached), &out); err == nil {
+				return &out, nil
+			}
+		}
+	}
+
+	u, _ := url.Parse(endpointAbuse)
 	q := u.Query()
 	q.Set("ipAddress", ip)
 	q.Set("maxAgeInDays", "90")
+	q.Set("verbose", "true")
 	u.RawQuery = q.Encode()
 
-	req, err := http.NewRequest("GET", u.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Key", key)
-
-	client := &http.Client{}
-	res, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
-	// Parse API response
-	var apiResp APIAbuseResponse
-	if err := json.NewDecoder(res.Body).Decode(&apiResp); err != nil {
-		return nil, err
-	}
-
-	// Map into slim output
-	slim := APIAbuseout{
-		IPaddress:            apiResp.Data.IPaddress,
-		Hostnames:            apiResp.Data.Hostnames,
-		Ispublic:             apiResp.Data.Ispublic,
-		Iswhitelisted:        apiResp.Data.Iswhitelisted,
-		AbuseConfidenceScore: apiResp.Data.AbuseConfidenceScore,
-		Countrycode:          apiResp.Data.Countrycode,
-		Isp:                  apiResp.Data.Isp,
-		TotalReports:         apiResp.Data.TotalReports,
-	}
-
-	out, err := json.MarshalIndent(slim, "", "  ")
+	body, err := doGet(u.String(), map[string]string{
+		"Key":    p.abuseKey,
+		"Accept": "application/json",
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	InsertValueDB(ip, string(out), "ABUSE_IP")
-	return &slim, nil
+	var resp abuseResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("parse: %w", err)
+	}
+
+	out := abuseOut{
+		IPAddress:            resp.Data.IPAddress,
+		IsPublic:             resp.Data.IsPublic,
+		IsWhitelisted:        resp.Data.IsWhitelisted,
+		AbuseConfidenceScore: resp.Data.AbuseConfidenceScore,
+		CountryCode:          resp.Data.CountryCode,
+		ISP:                  resp.Data.ISP,
+		Hostnames:            resp.Data.Hostnames,
+		TotalReports:         resp.Data.TotalReports,
+		LastReportedAt:       resp.Data.LastReportedAt,
+	}
+
+	if j, err := json.Marshal(out); err == nil {
+		putCached(ip, string(j), "ABUSE_IP")
+	}
+	return &out, nil
 }
 
-func sendipapi(ip string, key string) (string, error) {
+// ── VirusTotal ────────────────────────────────────────────────────────────────
 
-	data := GetValuetDB(ip, "IPAPIIS_IP")
-	if data != "" {
-		return data, nil
+func (p *IPProcessor) fetchVT(ip string, useCache bool) (*vtOut, error) {
+	if useCache {
+		if cached := getCached(ip, "VT_IP"); cached != "" {
+			var out vtOut
+			if err := json.Unmarshal([]byte(cached), &out); err == nil {
+				return &out, nil
+			}
+		}
 	}
 
-	payload := map[string]string{
-		"q":   ip,
-		"key": key,
-	}
-
-	jsonData, err := json.Marshal(payload)
+	body, err := doGet(endpointVT+ip, map[string]string{"x-apikey": p.vtKey})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	// Make POST request (http.Post is shorter than manually building client/req)
-	url := fmt.Sprintf("https://%s", ipapiis)
-
-	res, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
-	if err != nil {
-		return "", err
-	}
-	defer res.Body.Close()
-
-	// Parse API response
-	var apiResp APIipapiResponse
-	if err := json.NewDecoder(res.Body).Decode(&apiResp); err != nil {
-		return "", err
-	}
-	// Map into slim output
-	slim := APIipapiout{
-		Ip:          apiResp.Ip,
-		CompanyName: apiResp.Company.Name,
-		CompanyType: apiResp.Company.Type,
-		ASNOrg:      apiResp.ASN.Org,
-		Country:     apiResp.Location.Country,
-		State:       apiResp.Location.State,
-		City:        apiResp.Location.City,
-		Timezone:    apiResp.Location.Timezone,
+	var resp vtResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("parse: %w", err)
 	}
 
-	// Convert to JSON string
-	out, err := json.MarshalIndent(slim, "", "  ")
-	if err != nil {
-		return "", err
+	out := vtOut{
+		IPAddress:  resp.Data.ID,
+		Malicious:  resp.Data.Attributes.LastAnalysisStats.Malicious,
+		Suspicious: resp.Data.Attributes.LastAnalysisStats.Suspicious,
+		Undetected: resp.Data.Attributes.LastAnalysisStats.Undetected,
+		Harmless:   resp.Data.Attributes.LastAnalysisStats.Harmless,
+		Reputation: resp.Data.Attributes.Reputation,
 	}
 
-	InsertValueDB(ip, string(out), "IPAPIIS_IP")
-	return string(out) + ",", nil
+	if j, err := json.Marshal(out); err == nil {
+		putCached(ip, string(j), "VT_IP")
+	}
+	return &out, nil
 }

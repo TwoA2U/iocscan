@@ -1,4 +1,19 @@
-# Added by goreleaser init:
+# GoReleaser output
 dist/
+
+# Secrets
 .env
-.github/
+*.env
+
+# Build output
+iocscan
+iocscan.exe
+
+# Go
+*.test
+*.out
+
+# Editor
+.idea/
+.vscode/
+*.swp

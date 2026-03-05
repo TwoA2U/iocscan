@@ -1,3 +1,4 @@
+// utils/common.go — config file, SQLite cache, and API key helpers.
 package utils
 
 import (
@@ -9,157 +10,216 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	_ "modernc.org/sqlite"
 )
 
-type Collection_API struct {
-	VT_API    string
-	Abuse_API string
-	IPapi_API string
+// ── API key collection ────────────────────────────────────────────────────────
+
+// CollectionAPI holds the API keys read from the config file.
+type CollectionAPI struct {
+	VTAPI    string
+	AbuseAPI string
+	IPapiAPI string
+	MBAPI    string
 }
 
-func Get_API(cfgFile string) (*Collection_API, error) {
-	cfg, err := GetConfig(cfgFile)
+// GetAPI reads API keys from the config file (default: ~/.iocscan.yaml).
+func GetAPI(cfgFile string) (*CollectionAPI, error) {
+	cfg, err := getConfigPath(cfgFile)
 	if err != nil {
-		fmt.Println("Please initate all the API first before executing this program")
-		fmt.Println("checksec -v {VT_API} -a {Abuse_API} -i {IPapi_API}")
-		return nil, err
+		return nil, fmt.Errorf(
+			"config not found — run `iocscan -v <VT_KEY> -a <ABUSE_KEY> -i <IPAPI_KEY>` first: %w", err,
+		)
 	}
+
 	viper.SetConfigFile(cfg)
 	viper.AutomaticEnv()
 
 	if err := viper.ReadInConfig(); err != nil {
-		return nil, err
-	}
-	res := Collection_API{
-		VT_API:    strings.TrimSpace(viper.GetString("VT_API")),
-		Abuse_API: strings.TrimSpace(viper.GetString("Abuse_API")),
-		IPapi_API: strings.TrimSpace(viper.GetString("IPapi_API")),
+		return nil, fmt.Errorf("could not read config %s: %w", cfg, err)
 	}
 
-	return &res, nil
+	return &CollectionAPI{
+		VTAPI:    strings.TrimSpace(viper.GetString("VT_API")),
+		AbuseAPI: strings.TrimSpace(viper.GetString("Abuse_API")),
+		IPapiAPI: strings.TrimSpace(viper.GetString("IPapi_API")),
+		MBAPI:    strings.TrimSpace(viper.GetString("MB_API")),
+	}, nil
 }
 
-func GetConfig(cfgFile string) (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-
+// getConfigPath resolves the config file path, defaulting to ~/.iocscan.yaml.
+func getConfigPath(cfgFile string) (string, error) {
 	if cfgFile == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
 		cfgFile = filepath.Join(home, ".iocscan.yaml")
 	}
-
 	if _, err := os.Stat(cfgFile); err != nil {
 		return "", err
 	}
 	return cfgFile, nil
 }
 
-func GetDB() (string, error) {
+// WriteConf persists the API keys to ~/.iocscan.yaml.
+func WriteConf(vtAPI, abuseAPI, ipapiAPI, mbAPI string) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "could not determine home directory: %v\n", err)
+		return
+	}
+
+	config := fmt.Sprintf("VT_API: %s\nAbuse_API: %s\nIPapi_API: %s\nMB_API: %s\n", vtAPI, abuseAPI, ipapiAPI, mbAPI)
+
+	viper.SetConfigType("yaml")
+	if err := viper.ReadConfig(bytes.NewBufferString(config)); err != nil {
+		fmt.Fprintf(os.Stderr, "could not parse config: %v\n", err)
+		return
+	}
+
+	cfgPath := filepath.Join(home, ".iocscan.yaml")
+	if err := viper.WriteConfigAs(cfgPath); err != nil {
+		fmt.Fprintf(os.Stderr, "could not write config to %s: %v\n", cfgPath, err)
+		return
+	}
+	fmt.Printf("✅ Config saved to %s\n", cfgPath)
+}
+
+// ── SQLite cache ──────────────────────────────────────────────────────────────
+
+const cacheMaxAge = 30 * 24 * time.Hour
+
+// SQLite CURRENT_TIMESTAMP stores as "2006-01-02 15:04:05", not RFC3339.
+// We try multiple layouts to be safe.
+var sqliteTimeFormats = []string{
+	"2006-01-02 15:04:05",
+	"2006-01-02T15:04:05Z",
+	time.RFC3339,
+}
+
+func parseSQLiteTime(s string) (time.Time, error) {
+	for _, layout := range sqliteTimeFormats {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("cannot parse sqlite time %q", s)
+}
+
+// allowedTables whitelists valid cache table names to prevent SQL injection.
+var allowedTables = map[string]bool{
+	"VT_IP":      true,
+	"ABUSE_IP":   true,
+	"IPAPIIS_IP": true,
+}
+
+func dbPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	databaseFile := filepath.Join(home, ".iocscan.db")
-
-	if _, err := os.Stat(databaseFile); err != nil {
-		return "", err
-	}
-	return databaseFile, nil
+	return filepath.Join(home, ".iocscan.db"), nil
 }
 
-func GetValuetDB(ip string, table string) string {
-	DBFile, err := GetDB()
-	cobra.CheckErr(err)
+func openDB() (*sql.DB, error) {
+	path, err := dbPath()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(path); err != nil {
+		return nil, fmt.Errorf("cache DB not found — run `iocscan` setup first")
+	}
+	return sql.Open("sqlite", path)
+}
 
-	db, err := sql.Open("sqlite", DBFile)
-	cobra.CheckErr(err)
+// InitDB creates the SQLite cache database and its three tables.
+func InitDB() {
+	path, err := dbPath()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "InitDB: %v\n", err)
+		return
+	}
+
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "InitDB open: %v\n", err)
+		return
+	}
 	defer db.Close()
 
-	var data string
-	var created_at string
-	query := fmt.Sprintf("select data, created_at from %s where IP = ?", table)
-	err = db.QueryRow(query, ip).Scan(&data, &created_at)
-	if err == sql.ErrNoRows {
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS VT_IP (
+			IP         TEXT PRIMARY KEY NOT NULL,
+			DATA       TEXT NOT NULL,
+			CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE TABLE IF NOT EXISTS ABUSE_IP (
+			IP         TEXT PRIMARY KEY NOT NULL,
+			DATA       TEXT NOT NULL,
+			CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE TABLE IF NOT EXISTS IPAPIIS_IP (
+			IP         TEXT PRIMARY KEY NOT NULL,
+			DATA       TEXT NOT NULL,
+			CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE TABLE IF NOT EXISTS VT_HASH (
+			IP         TEXT PRIMARY KEY NOT NULL,
+			DATA       TEXT NOT NULL,
+			CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE TABLE IF NOT EXISTS MB_HASH (
+			IP         TEXT PRIMARY KEY NOT NULL,
+			DATA       TEXT NOT NULL,
+			CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);
+	`)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "InitDB create tables: %v\n", err)
+		return
+	}
+	fmt.Println("✅ Cache DB initialised")
+}
+
+// getCached returns a cached result for the given IP and table,
+// or "" if not found or expired (> 30 days old).
+func getCached(ip, table string) string {
+	if !allowedTables[table] {
 		return ""
 	}
-	cobra.CheckErr(err)
+	db, err := openDB()
+	if err != nil {
+		return ""
+	}
+	defer db.Close()
 
-	parsedtime, err := time.Parse(time.RFC3339, created_at)
-	cobra.CheckErr(err)
-	parsedtime = parsedtime.UTC()
-	cutoff := time.Now().AddDate(0, 0, -30).UTC()
+	var data, createdAt string
+	query := fmt.Sprintf("SELECT DATA, CREATED_AT FROM %s WHERE IP = ?", table)
+	if err := db.QueryRow(query, ip).Scan(&data, &createdAt); err != nil {
+		return ""
+	}
 
-	if parsedtime.Before(cutoff) {
-		query := fmt.Sprintf("delete from %s where IP = ?", table)
-		_, err = db.Exec(query, ip)
-		cobra.CheckErr(err)
+	t, err := parseSQLiteTime(createdAt)
+	if err != nil || time.Since(t.UTC()) > cacheMaxAge {
+		db.Exec(fmt.Sprintf("DELETE FROM %s WHERE IP = ?", table), ip)
 		return ""
 	}
 	return data
 }
 
-func InsertValueDB(ip string, data string, table string) {
-	DBFile, err := GetDB()
-	cobra.CheckErr(err)
-	db, err := sql.Open("sqlite", DBFile)
-	cobra.CheckErr(err)
+// putCached inserts or replaces a cached result.
+func putCached(ip, data, table string) {
+	if !allowedTables[table] {
+		return
+	}
+	db, err := openDB()
+	if err != nil {
+		return
+	}
 	defer db.Close()
 
-	query := fmt.Sprintf("INSERT INTO %s (ip, data) VALUES (?, ?)", table)
-	_, err = db.Exec(query, ip, data)
-	cobra.CheckErr(err)
-}
-
-func InitDB() {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		cobra.CheckErr(err)
-	}
-	databaseFile := filepath.Join(home, ".iocscan.db")
-	f, err := os.Create(databaseFile)
-	if err != nil {
-		cobra.CheckErr(err)
-	}
-	defer f.Close()
-	db, err := sql.Open("sqlite", databaseFile)
-	if err != nil {
-		cobra.CheckErr(err)
-	}
-
-	if _, err := db.Exec(`
-CREATE TABLE IF NOT EXISTS VT_IP (IP TEXT PRIMARY KEY NOT NULL, DATA TEXT NOT NULL, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP);	
-CREATE TABLE IF NOT EXISTS ABUSE_IP (IP TEXT PRIMARY KEY NOT NULL , DATA TEXT NOT NULL, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP);	
-CREATE TABLE IF NOT EXISTS IPAPIIS_IP (IP TEXT PRIMARY KEY NOT NULL ,DATA TEXT NOT NULL, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP);`,
-	); err != nil {
-		cobra.CheckErr(err)
-	}
-}
-
-func WriteConf(VT_API string, Abuse_APIstring, IPapi_API string) {
-
-	config := fmt.Sprintf(`
-VT_API: %s
-Abuse_API: %s
-IPapi_API: %s
-`, VT_API, Abuse_APIstring, IPapi_API)
-
-	viper.SetConfigType("yaml")
-	if err := viper.ReadConfig(bytes.NewBuffer([]byte(config))); err != nil {
-		cobra.CheckErr(err)
-	}
-
-	home, err := os.UserHomeDir()
-	if err != nil {
-		cobra.CheckErr(err)
-	}
-
-	configFilePath := filepath.Join(home, ".checksec.yaml")
-	if err := viper.SafeWriteConfigAs(configFilePath); err != nil {
-		cobra.CheckErr(err)
-	}
-	fmt.Printf("Config file successfully written to %s\n", configFilePath)
+	query := fmt.Sprintf("INSERT OR REPLACE INTO %s (IP, DATA) VALUES (?, ?)", table)
+	db.Exec(query, ip, data)
 }
