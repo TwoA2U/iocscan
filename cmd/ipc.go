@@ -1,4 +1,4 @@
-// cmd/ipc.go — "ipc" subcommand: full IP enrichment (AbuseIPDB + VirusTotal + geo).
+// cmd/ipc.go — "ipc" subcommand: full IP enrichment (AbuseIPDB + VirusTotal + geo + ThreatFox).
 //
 // Usage:
 //   iocscan ipc -i 8.8.8.8
@@ -17,8 +17,8 @@ var ipcIPAddr string
 
 var ipcCmd = &cobra.Command{
 	Use:   "ipc",
-	Short: "Complex IP enrichment — AbuseIPDB + VirusTotal (requires all API keys)",
-	Long:  `Queries AbuseIPDB and VirusTotal concurrently for full threat-intel enrichment.`,
+	Short: "Complex IP enrichment — AbuseIPDB + VirusTotal + ThreatFox (requires all API keys)",
+	Long:  `Queries AbuseIPDB, VirusTotal and ThreatFox concurrently for full threat-intel enrichment.`,
 	Example: `  iocscan ipc -i 8.8.8.8
   iocscan ipc -i "8.8.8.8, 1.1.1.1"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -32,7 +32,7 @@ var ipcCmd = &cobra.Command{
 			return err
 		}
 
-		processor := utils.NewIPProcessor(apis.VTAPI, apis.AbuseAPI, apis.IPapiAPI)
+		processor := utils.NewIPProcessor(apis.VTAPI, apis.AbuseAPI, apis.IPapiAPI, apis.AbuseCHAPI)
 
 		fmt.Println("[")
 		for i, ip := range ips {

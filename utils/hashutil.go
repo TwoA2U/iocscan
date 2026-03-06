@@ -1,108 +1,21 @@
-// utils/hashutil.go — Hash enrichment: VirusTotal + MalwareBazaar.
+// utils/hashutil.go — Hash enrichment orchestrator.
 //
-// Supports MD5 (32), SHA1 (40), SHA256 (64) hex strings.
-// Sources:
-//   - VirusTotal     GET  https://www.virustotal.com/api/v3/files/{hash}
-//   - MalwareBazaar  POST https://mb-api.abuse.ch/api/v1/  (form data)
+// Public API (unchanged):
+//   LookupHash(hash, vtKey, abusechKey string, useCache bool) (string, error)
 package utils
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
-	"mime/multipart"
-	"net/http"
 	"strings"
 	"time"
+
+	"github.com/TwoA2U/iocscan/integrations"
 )
 
-const (
-	endpointVTHash = "https://www.virustotal.com/api/v3/files/"
-	endpointMBHash = "https://mb-api.abuse.ch/api/v1/"
-)
+// ── Sub-structs for vendor-grouped output ─────────────────────────────────────
 
-// ── VirusTotal /files/{hash} ──────────────────────────────────────────────────
-
-type vtFileAttr struct {
-	MD5            string `json:"md5"`
-	SHA1           string `json:"sha1"`
-	SHA256         string `json:"sha256"`
-	MeaningfulName string `json:"meaningful_name"`
-	Magic          string `json:"magic"`
-	Magika         string `json:"magika"`
-
-	LastAnalysisStats struct {
-		Harmless   int `json:"harmless"`
-		Malicious  int `json:"malicious"`
-		Suspicious int `json:"suspicious"`
-		Undetected int `json:"undetected"`
-	} `json:"last_analysis_stats"`
-
-	Reputation int `json:"reputation"`
-
-	PopularThreatClassification struct {
-		SuggestedThreatLabel  string `json:"suggested_threat_label"`
-		PopularThreatCategory []struct {
-			Value string `json:"value"`
-			Count int    `json:"count"`
-		} `json:"popular_threat_category"`
-		PopularThreatName []struct {
-			Value string `json:"value"`
-			Count int    `json:"count"`
-		} `json:"popular_threat_name"`
-	} `json:"popular_threat_classification"`
-
-	SandboxVerdicts map[string]struct {
-		Category              string   `json:"category"`
-		MalwareClassification []string `json:"malware_classification"`
-		SandboxName           string   `json:"sandbox_name"`
-	} `json:"sandbox_verdicts"`
-
-	SigmaAnalysisSummary map[string]struct {
-		Critical int `json:"critical"`
-		High     int `json:"high"`
-		Medium   int `json:"medium"`
-		Low      int `json:"low"`
-	} `json:"sigma_analysis_summary"`
-
-	SignatureInfo struct {
-		Signers        string `json:"signers"`
-		SignersDetails []struct {
-			CertIssuer string `json:"cert issuer"`
-			Name       string `json:"name"`
-			Status     string `json:"status"`
-			ValidFrom  string `json:"valid from"`
-			ValidTo    string `json:"valid to"`
-			Algorithm  string `json:"algorithm"`
-		} `json:"signers details"`
-	} `json:"signature_info"`
-}
-
-type vtFileResponse struct {
-	Data struct {
-		Attributes vtFileAttr `json:"attributes"`
-	} `json:"data"`
-}
-
-// ── MalwareBazaar query_hash ──────────────────────────────────────────────────
-
-type mbHashResp struct {
-	QueryStatus string    `json:"query_status"`
-	Data        []mbEntry `json:"data"`
-}
-
-type mbEntry struct {
-	FileName  string   `json:"file_name"`
-	FileType  string   `json:"file_type"`
-	Signature string   `json:"signature"`
-	Tags      []string `json:"tags"`
-	Comment   string   `json:"comment"`
-}
-
-// ── HashResult — exactly the fields from the spec ─────────────────────────────
-
-// VTSignerDetail holds info about a code-signing certificate.
+// VTSignerDetail holds code-signing certificate detail.
 type VTSignerDetail struct {
 	CertIssuer string `json:"certIssuer,omitempty"`
 	Name       string `json:"name,omitempty"`
@@ -119,19 +32,15 @@ type SigmaSummaryEntry struct {
 	Low      int `json:"low"`
 }
 
-// HashLinks holds direct URLs to third-party pages.
+// HashLinks holds direct URLs to third-party pages for a hash.
 type HashLinks struct {
 	VirusTotal    string `json:"virustotal"`
 	MalwareBazaar string `json:"malwarebazaar"`
 }
 
-// HashResult is the lean merged output of a hash lookup.
-type HashResult struct {
-	Hash      string `json:"hash"`
-	HashType  string `json:"hashType"`
-	RiskLevel string `json:"riskLevel"`
-
-	// VT — identity
+// HashVirusTotal holds all VirusTotal enrichment fields for a file hash.
+type HashVirusTotal struct {
+	// File identity
 	MD5            string `json:"md5,omitempty"`
 	SHA1           string `json:"sha1,omitempty"`
 	SHA256         string `json:"sha256,omitempty"`
@@ -139,40 +48,52 @@ type HashResult struct {
 	Magic          string `json:"magic,omitempty"`
 	Magika         string `json:"magika,omitempty"`
 
-	// VT — detection stats
-	VTHarmless   int `json:"vtHarmless"`
-	VTMalicious  int `json:"vtMalicious"`
-	VTSuspicious int `json:"vtSuspicious"`
-	VTUndetected int `json:"vtUndetected"`
-	VTReputation int `json:"vtReputation"`
+	// Detection stats
+	Malicious  int `json:"malicious"`
+	Suspicious int `json:"suspicious"`
+	Harmless   int `json:"harmless"`
+	Undetected int `json:"undetected"`
+	Reputation int `json:"reputation"`
 
-	// VT — threat classification
+	// Threat classification
 	SuggestedThreatLabel    string   `json:"suggestedThreatLabel,omitempty"`
 	PopularThreatCategories []string `json:"popularThreatCategories,omitempty"`
 	PopularThreatNames      []string `json:"popularThreatNames,omitempty"`
 
-	// VT — sandbox verdicts (malware_classification values from malicious sandboxes)
+	// Sandbox
 	SandboxMalwareClassifications []string `json:"sandboxMalwareClassifications,omitempty"`
 
-	// VT — sigma analysis summary
+	// Sigma
 	SigmaAnalysisSummary map[string]SigmaSummaryEntry `json:"sigmaAnalysisSummary,omitempty"`
 
-	// VT — signature info
+	// Code signing
 	SignatureSigners string          `json:"signatureSigners,omitempty"`
-	SignerDetail     *VTSignerDetail `json:"signerDetail,omitempty"` // first signer only
-
-	// MB fields
-	MBQueryStatus string   `json:"mbQueryStatus"`
-	MBFileName    string   `json:"mbFileName,omitempty"`
-	MBFileType    string   `json:"mbFileType,omitempty"`
-	MBSignature   string   `json:"mbSignature,omitempty"`
-	MBTags        []string `json:"mbTags,omitempty"`
-	MBComment     string   `json:"mbComment,omitempty"`
-
-	Links HashLinks `json:"links"`
+	SignerDetail     *VTSignerDetail `json:"signerDetail,omitempty"`
 }
 
-// ── helpers ───────────────────────────────────────────────────────────────────
+// HashMalwareBazaar holds MalwareBazaar enrichment for a file hash.
+type HashMalwareBazaar struct {
+	QueryStatus string   `json:"queryStatus"`
+	FileName    string   `json:"fileName,omitempty"`
+	FileType    string   `json:"fileType,omitempty"`
+	Signature   string   `json:"signature,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
+	Comment     string   `json:"comment,omitempty"`
+}
+
+// HashResult is the vendor-grouped output of a hash lookup.
+type HashResult struct {
+	Hash      string    `json:"hash"`
+	HashType  string    `json:"hashType"`
+	RiskLevel string    `json:"riskLevel"`
+	Links     HashLinks `json:"links"`
+
+	VirusTotal    HashVirusTotal             `json:"virustotal"`
+	MalwareBazaar HashMalwareBazaar          `json:"malwarebazaar"`
+	ThreatFox     *integrations.TFHashResult `json:"threatfox,omitempty"`
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 func detectHashType(h string) string {
 	switch len(h) {
@@ -207,170 +128,18 @@ func assessHashRisk(vtMal int, mbFound bool, sandboxMal int) string {
 	}
 }
 
-// doPost sends an HTTP POST with application/x-www-form-urlencoded body.
-func doPost(rawURL, body string, headers map[string]string) ([]byte, error) {
-	req, err := http.NewRequest(http.MethodPost, rawURL, strings.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", "iocscan/1.0")
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d from %s", resp.StatusCode, rawURL)
-	}
-	return io.ReadAll(resp.Body)
-}
+// ── cache table registration ──────────────────────────────────────────────────
 
-// ── cache ─────────────────────────────────────────────────────────────────────
-
-var hashCacheTables = map[string]bool{
-	"VT_HASH": true,
-	"MB_HASH": true,
-}
-
-func getHashCached(hash, table string) string {
-	if !hashCacheTables[table] {
-		return ""
-	}
-	db, err := openDB()
-	if err != nil {
-		return ""
-	}
-	defer db.Close()
-	var data, createdAt string
-	q := fmt.Sprintf("SELECT DATA, CREATED_AT FROM %s WHERE IP = ?", table)
-	if err := db.QueryRow(q, hash).Scan(&data, &createdAt); err != nil {
-		return ""
-	}
-	t, err := parseSQLiteTime(createdAt)
-	if err != nil || time.Since(t.UTC()) > cacheMaxAge {
-		db.Exec(fmt.Sprintf("DELETE FROM %s WHERE IP = ?", table), hash)
-		return ""
-	}
-	return data
-}
-
-func putHashCached(hash, data, table string) {
-	if !hashCacheTables[table] {
-		return
-	}
-	db, err := openDB()
-	if err != nil {
-		return
-	}
-	defer db.Close()
-	q := fmt.Sprintf("INSERT OR REPLACE INTO %s (IP, DATA) VALUES (?, ?)", table)
-	db.Exec(q, hash, data)
-}
-
-// ClearHashCaches deletes all rows from the specified hash cache tables.
-// Returns the total number of rows deleted.
-func ClearHashCaches(tables []string) int {
-	db, err := openDB()
-	if err != nil {
-		return 0
-	}
-	defer db.Close()
-	total := 0
-	for _, t := range tables {
-		if !hashCacheTables[t] {
-			continue
-		}
-		res, err := db.Exec(fmt.Sprintf("DELETE FROM %s", t))
-		if err == nil {
-			n, _ := res.RowsAffected()
-			total += int(n)
-		}
-	}
-	return total
-}
-
-// ── API fetchers ──────────────────────────────────────────────────────────────
-
-func fetchVTHash(hash, vtKey string) (*vtFileResponse, error) {
-	if vtKey == "" {
-		return nil, fmt.Errorf("VirusTotal API key not provided")
-	}
-	raw, err := doGet(endpointVTHash+hash, map[string]string{"x-apikey": vtKey})
-	if err != nil {
-		return nil, fmt.Errorf("VT hash: %w", err)
-	}
-	var r vtFileResponse
-	if err := json.Unmarshal(raw, &r); err != nil {
-		return nil, fmt.Errorf("VT hash parse: %w", err)
-	}
-	return &r, nil
-}
-
-// fetchMBHash queries MalwareBazaar using multipart/form-data POST (as per API spec).
-// Returns the entry (or nil), the raw query_status string, and any transport error.
-func fetchMBHash(hash, mbKey string) (*mbEntry, string, error) {
-	if mbKey == "" {
-		return nil, "no_api_key", nil
-	}
-
-	// Build multipart/form-data body — exactly as the MB API expects
-	var buf bytes.Buffer
-	w := multipart.NewWriter(&buf)
-	w.WriteField("query", "get_info")
-	w.WriteField("hash", hash)
-	w.Close()
-
-	req, err := http.NewRequest(http.MethodPost, endpointMBHash, &buf)
-	if err != nil {
-		return nil, "error", err
-	}
-	// Auth-Key is a request header; Content-Type must include the multipart boundary
-	req.Header.Set("Auth-Key", mbKey)
-	req.Header.Set("Content-Type", w.FormDataContentType())
-	req.Header.Set("User-Agent", "iocscan/1.0")
-	req.Header.Set("Accept", "*/*")
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, "error", fmt.Errorf("MB hash request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, "error", fmt.Errorf("MB hash read: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Sprintf("http_%d", resp.StatusCode), fmt.Errorf("MB HTTP %d: %s", resp.StatusCode, string(raw))
-	}
-
-	var mbResp mbHashResp
-	if err := json.Unmarshal(raw, &mbResp); err != nil {
-		return nil, "parse_error", fmt.Errorf("MB parse: %w — body: %.200s", err, string(raw))
-	}
-
-	// Pass through the exact query_status from MB — never mask it
-	status := mbResp.QueryStatus
-	if status == "" {
-		status = "unknown_response"
-	}
-
-	if status != "ok" || len(mbResp.Data) == 0 {
-		// Not found or an API error — return the real status so UI can show it
-		return nil, status, nil
-	}
-
-	return &mbResp.Data[0], "ok", nil
+func init() {
+	hashCacheTables["VT_HASH"] = true
+	hashCacheTables["MB_HASH"] = true
+	hashCacheTables["TF_IP"] = true
+	hashCacheTables["TF_HASH"] = true
 }
 
 // ── LookupHash ────────────────────────────────────────────────────────────────
 
-// LookupHash enriches a hash using VirusTotal + MalwareBazaar concurrently.
-func LookupHash(hash, vtKey, mbKey string, useCache bool) (string, error) {
+func LookupHash(hash, vtKey, abusechKey string, useCache bool) (string, error) {
 	hash = strings.ToLower(strings.TrimSpace(hash))
 	hashType := detectHashType(hash)
 	if hashType == "unknown" {
@@ -384,121 +153,143 @@ func LookupHash(hash, vtKey, mbKey string, useCache bool) (string, error) {
 			VirusTotal:    "https://www.virustotal.com/gui/file/" + hash,
 			MalwareBazaar: "https://bazaar.abuse.ch/sample/" + hash,
 		},
+		MalwareBazaar: HashMalwareBazaar{QueryStatus: "no_api_key"},
 	}
 
-	// ── concurrent fetches ────────────────────────────────────────────────────
 	type vtRes struct {
-		d   *vtFileResponse
+		d   *integrations.VTFileResponse
 		err error
 	}
 	type mbRes struct {
-		d      *mbEntry
+		d      *integrations.MBEntry
 		status string
 		err    error
 	}
+	type tfRes struct {
+		data *integrations.TFHashResult
+		err  error
+	}
+
 	vtCh := make(chan vtRes, 1)
 	mbCh := make(chan mbRes, 1)
+	tfCh := make(chan tfRes, 1)
 
+	// ── VirusTotal ────────────────────────────────────────────────────────────
 	go func() {
 		if useCache {
 			if raw := getHashCached(hash, "VT_HASH"); raw != "" {
-				var r vtFileResponse
-				json.Unmarshal([]byte(raw), &r)
-				vtCh <- vtRes{d: &r}
-				return
+				var r integrations.VTFileResponse
+				if err := json.Unmarshal([]byte(raw), &r); err == nil {
+					vtCh <- vtRes{d: &r}
+					return
+				}
 			}
 		}
-		r, err := fetchVTHash(hash, vtKey)
-		if err == nil && r != nil && useCache {
-			b, _ := json.Marshal(r)
-			putHashCached(hash, string(b), "VT_HASH")
+		r, err := integrations.FetchVTHash(hash, vtKey)
+		if err == nil && r != nil {
+			if b, e := json.Marshal(r); e == nil {
+				putHashCached(hash, string(b), "VT_HASH")
+			}
 		}
 		vtCh <- vtRes{d: r, err: err}
 	}()
 
+	// ── MalwareBazaar ─────────────────────────────────────────────────────────
 	go func() {
 		if useCache {
 			if raw := getHashCached(hash, "MB_HASH"); raw != "" {
-				var e mbEntry
-				json.Unmarshal([]byte(raw), &e)
-				mbCh <- mbRes{d: &e, status: "ok"}
-				return
+				var e integrations.MBEntry
+				if err := json.Unmarshal([]byte(raw), &e); err == nil {
+					mbCh <- mbRes{d: &e, status: "ok"}
+					return
+				}
 			}
 		}
-		e, status, err := fetchMBHash(hash, mbKey)
-		if err == nil && e != nil && useCache {
-			b, _ := json.Marshal(e)
-			putHashCached(hash, string(b), "MB_HASH")
+		e, status, err := integrations.FetchMBHash(hash, abusechKey)
+		if err == nil && e != nil {
+			if b, er := json.Marshal(e); er == nil {
+				putHashCached(hash, string(b), "MB_HASH")
+			}
 		}
 		mbCh <- mbRes{d: e, status: status, err: err}
 	}()
 
+	// ── ThreatFox ─────────────────────────────────────────────────────────────
+	go func() {
+		if useCache {
+			if raw := getHashCached(hash, "TF_HASH"); raw != "" {
+				var r integrations.TFHashResult
+				if err := json.Unmarshal([]byte(raw), &r); err == nil {
+					tfCh <- tfRes{data: &r}
+					return
+				}
+			}
+		}
+		d, err := integrations.FetchTFHash(hash, abusechKey)
+		if d != nil {
+			if b, e := json.Marshal(d); e == nil {
+				putHashCached(hash, string(b), "TF_HASH")
+			}
+		}
+		tfCh <- tfRes{data: d, err: err}
+	}()
+
 	vr := <-vtCh
 	mr := <-mbCh
+	tr := <-tfCh
 
-	// ── populate VT fields ────────────────────────────────────────────────────
+	// ── Populate VirusTotal ───────────────────────────────────────────────────
 	sandboxMal := 0
 	if vr.d != nil {
 		a := vr.d.Data.Attributes
+		result.VirusTotal.MD5 = a.MD5
+		result.VirusTotal.SHA1 = a.SHA1
+		result.VirusTotal.SHA256 = a.SHA256
+		result.VirusTotal.MeaningfulName = a.MeaningfulName
+		result.VirusTotal.Magic = a.Magic
+		result.VirusTotal.Magika = a.Magika
+		result.VirusTotal.Malicious = a.LastAnalysisStats.Malicious
+		result.VirusTotal.Suspicious = a.LastAnalysisStats.Suspicious
+		result.VirusTotal.Harmless = a.LastAnalysisStats.Harmless
+		result.VirusTotal.Undetected = a.LastAnalysisStats.Undetected
+		result.VirusTotal.Reputation = a.Reputation
+		result.VirusTotal.SuggestedThreatLabel = a.PopularThreatClassification.SuggestedThreatLabel
 
-		result.MD5 = a.MD5
-		result.SHA1 = a.SHA1
-		result.SHA256 = a.SHA256
-		result.MeaningfulName = a.MeaningfulName
-		result.Magic = a.Magic
-		result.Magika = a.Magika
-
-		result.VTHarmless = a.LastAnalysisStats.Harmless
-		result.VTMalicious = a.LastAnalysisStats.Malicious
-		result.VTSuspicious = a.LastAnalysisStats.Suspicious
-		result.VTUndetected = a.LastAnalysisStats.Undetected
-		result.VTReputation = a.Reputation
-
-		result.SuggestedThreatLabel = a.PopularThreatClassification.SuggestedThreatLabel
 		for _, c := range a.PopularThreatClassification.PopularThreatCategory {
-			result.PopularThreatCategories = append(result.PopularThreatCategories, c.Value)
+			result.VirusTotal.PopularThreatCategories = append(result.VirusTotal.PopularThreatCategories, c.Value)
 		}
 		for _, n := range a.PopularThreatClassification.PopularThreatName {
-			result.PopularThreatNames = append(result.PopularThreatNames, n.Value)
+			result.VirusTotal.PopularThreatNames = append(result.VirusTotal.PopularThreatNames, n.Value)
 		}
 
-		// Collect malware_classification from malicious sandbox verdicts
 		seen := map[string]bool{}
 		for _, sv := range a.SandboxVerdicts {
 			if sv.Category == "malicious" {
 				sandboxMal++
 				for _, mc := range sv.MalwareClassification {
 					if !seen[mc] {
-						result.SandboxMalwareClassifications = append(result.SandboxMalwareClassifications, mc)
+						result.VirusTotal.SandboxMalwareClassifications = append(result.VirusTotal.SandboxMalwareClassifications, mc)
 						seen[mc] = true
 					}
 				}
 			}
 		}
 
-		// Sigma summary
 		if len(a.SigmaAnalysisSummary) > 0 {
-			result.SigmaAnalysisSummary = make(map[string]SigmaSummaryEntry)
+			result.VirusTotal.SigmaAnalysisSummary = make(map[string]SigmaSummaryEntry)
 			for ruleset, stats := range a.SigmaAnalysisSummary {
-				result.SigmaAnalysisSummary[ruleset] = SigmaSummaryEntry{
-					Critical: stats.Critical,
-					High:     stats.High,
-					Medium:   stats.Medium,
-					Low:      stats.Low,
+				result.VirusTotal.SigmaAnalysisSummary[ruleset] = SigmaSummaryEntry{
+					Critical: stats.Critical, High: stats.High, Medium: stats.Medium, Low: stats.Low,
 				}
 			}
 		}
 
-		// Signature info
-		result.SignatureSigners = a.SignatureInfo.Signers
+		result.VirusTotal.SignatureSigners = a.SignatureInfo.Signers
 		if len(a.SignatureInfo.SignersDetails) > 0 {
 			d := a.SignatureInfo.SignersDetails[0]
-			result.SignerDetail = &VTSignerDetail{
-				CertIssuer: d.CertIssuer,
-				Name:       d.Name,
-				Status:     d.Status,
-				ValidFrom:  d.ValidFrom,
-				ValidTo:    d.ValidTo,
+			result.VirusTotal.SignerDetail = &VTSignerDetail{
+				CertIssuer: d.CertIssuer, Name: d.Name, Status: d.Status,
+				ValidFrom: d.ValidFrom, ValidTo: d.ValidTo,
 			}
 		}
 
@@ -509,18 +300,24 @@ func LookupHash(hash, vtKey, mbKey string, useCache bool) (string, error) {
 		}
 	}
 
-	// ── populate MB fields ────────────────────────────────────────────────────
-	result.MBQueryStatus = mr.status
+	// ── Populate MalwareBazaar ────────────────────────────────────────────────
+	result.MalwareBazaar.QueryStatus = mr.status
 	if mr.d != nil {
-		e := mr.d
-		result.MBFileName = e.FileName
-		result.MBFileType = e.FileType
-		result.MBSignature = e.Signature
-		result.MBTags = e.Tags
-		result.MBComment = e.Comment
+		result.MalwareBazaar.FileName = mr.d.FileName
+		result.MalwareBazaar.FileType = mr.d.FileType
+		result.MalwareBazaar.Signature = mr.d.Signature
+		result.MalwareBazaar.Tags = mr.d.Tags
+		result.MalwareBazaar.Comment = mr.d.Comment
 	}
 
-	result.RiskLevel = assessHashRisk(result.VTMalicious, mr.status == "ok" && mr.d != nil, sandboxMal)
+	// ── Populate ThreatFox ────────────────────────────────────────────────────
+	if tr.data != nil {
+		result.ThreatFox = tr.data
+	} else if tr.err != nil {
+		result.ThreatFox = &integrations.TFHashResult{QueryStatus: "error"}
+	}
+
+	result.RiskLevel = assessHashRisk(result.VirusTotal.Malicious, mr.status == "ok" && mr.d != nil, sandboxMal)
 
 	j, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {

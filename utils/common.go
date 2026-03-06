@@ -18,10 +18,10 @@ import (
 
 // CollectionAPI holds the API keys read from the config file.
 type CollectionAPI struct {
-	VTAPI    string
-	AbuseAPI string
-	IPapiAPI string
-	MBAPI    string
+	VTAPI      string
+	AbuseAPI   string
+	IPapiAPI   string
+	AbuseCHAPI string // Single key for both MalwareBazaar and ThreatFox (abuse.ch services)
 }
 
 // GetAPI reads API keys from the config file (default: ~/.iocscan.yaml).
@@ -41,10 +41,10 @@ func GetAPI(cfgFile string) (*CollectionAPI, error) {
 	}
 
 	return &CollectionAPI{
-		VTAPI:    strings.TrimSpace(viper.GetString("VT_API")),
-		AbuseAPI: strings.TrimSpace(viper.GetString("Abuse_API")),
-		IPapiAPI: strings.TrimSpace(viper.GetString("IPapi_API")),
-		MBAPI:    strings.TrimSpace(viper.GetString("MB_API")),
+		VTAPI:      strings.TrimSpace(viper.GetString("VT_API")),
+		AbuseAPI:   strings.TrimSpace(viper.GetString("Abuse_API")),
+		IPapiAPI:   strings.TrimSpace(viper.GetString("IPapi_API")),
+		AbuseCHAPI: strings.TrimSpace(viper.GetString("AbuseCH_API")),
 	}, nil
 }
 
@@ -64,14 +64,17 @@ func getConfigPath(cfgFile string) (string, error) {
 }
 
 // WriteConf persists the API keys to ~/.iocscan.yaml.
-func WriteConf(vtAPI, abuseAPI, ipapiAPI, mbAPI string) {
+func WriteConf(vtAPI, abuseAPI, ipapiAPI, abuseCHAPI string) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "could not determine home directory: %v\n", err)
 		return
 	}
 
-	config := fmt.Sprintf("VT_API: %s\nAbuse_API: %s\nIPapi_API: %s\nMB_API: %s\n", vtAPI, abuseAPI, ipapiAPI, mbAPI)
+	config := fmt.Sprintf(
+		"VT_API: %s\nAbuse_API: %s\nIPapi_API: %s\nAbuseCH_API: %s\n",
+		vtAPI, abuseAPI, ipapiAPI, abuseCHAPI,
+	)
 
 	viper.SetConfigType("yaml")
 	if err := viper.ReadConfig(bytes.NewBufferString(config)); err != nil {
@@ -113,6 +116,7 @@ var allowedTables = map[string]bool{
 	"VT_IP":      true,
 	"ABUSE_IP":   true,
 	"IPAPIIS_IP": true,
+	"TF_IP":      true, // ThreatFox IP cache
 }
 
 func dbPath() (string, error) {
@@ -134,7 +138,7 @@ func openDB() (*sql.DB, error) {
 	return sql.Open("sqlite", path)
 }
 
-// InitDB creates the SQLite cache database and its three tables.
+// InitDB creates the SQLite cache database and its tables.
 func InitDB() {
 	path, err := dbPath()
 	if err != nil {
@@ -171,6 +175,16 @@ func InitDB() {
 			CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		);
 		CREATE TABLE IF NOT EXISTS MB_HASH (
+			IP         TEXT PRIMARY KEY NOT NULL,
+			DATA       TEXT NOT NULL,
+			CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE TABLE IF NOT EXISTS TF_IP (
+			IP         TEXT PRIMARY KEY NOT NULL,
+			DATA       TEXT NOT NULL,
+			CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE TABLE IF NOT EXISTS TF_HASH (
 			IP         TEXT PRIMARY KEY NOT NULL,
 			DATA       TEXT NOT NULL,
 			CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -222,4 +236,77 @@ func putCached(ip, data, table string) {
 
 	query := fmt.Sprintf("INSERT OR REPLACE INTO %s (IP, DATA) VALUES (?, ?)", table)
 	db.Exec(query, ip, data)
+}
+
+// ── Hash cache helpers ────────────────────────────────────────────────────────
+// Used by hashutil.go and iputil.go for hash-keyed cache tables
+// (VT_HASH, MB_HASH, TF_HASH, TF_IP).
+// Tables are registered via hashCacheTables in hashutil.go's init().
+
+// hashCacheTables is the whitelist of valid hash-keyed cache table names.
+// Populated by init() in hashutil.go to avoid SQL injection.
+var hashCacheTables = map[string]bool{}
+
+// getHashCached returns a cached result for the given key and table,
+// or "" if not found or expired.
+func getHashCached(key, table string) string {
+	if !hashCacheTables[table] {
+		return ""
+	}
+	db, err := openDB()
+	if err != nil {
+		return ""
+	}
+	defer db.Close()
+
+	var data, createdAt string
+	q := fmt.Sprintf("SELECT DATA, CREATED_AT FROM %s WHERE IP = ?", table)
+	if err := db.QueryRow(q, key).Scan(&data, &createdAt); err != nil {
+		return ""
+	}
+
+	t, err := parseSQLiteTime(createdAt)
+	if err != nil || time.Since(t.UTC()) > cacheMaxAge {
+		db.Exec(fmt.Sprintf("DELETE FROM %s WHERE IP = ?", table), key)
+		return ""
+	}
+	return data
+}
+
+// putHashCached inserts or replaces a cached result in a hash-keyed table.
+func putHashCached(key, data, table string) {
+	if !hashCacheTables[table] {
+		return
+	}
+	db, err := openDB()
+	if err != nil {
+		return
+	}
+	defer db.Close()
+
+	q := fmt.Sprintf("INSERT OR REPLACE INTO %s (IP, DATA) VALUES (?, ?)", table)
+	db.Exec(q, key, data)
+}
+
+// ClearHashCaches deletes all rows from the specified hash cache tables.
+// Returns the total number of rows deleted.
+func ClearHashCaches(tables []string) int {
+	db, err := openDB()
+	if err != nil {
+		return 0
+	}
+	defer db.Close()
+
+	total := 0
+	for _, t := range tables {
+		if !hashCacheTables[t] {
+			continue
+		}
+		res, err := db.Exec(fmt.Sprintf("DELETE FROM %s", t))
+		if err == nil {
+			n, _ := res.RowsAffected()
+			total += int(n)
+		}
+	}
+	return total
 }

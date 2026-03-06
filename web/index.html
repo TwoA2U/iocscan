@@ -105,7 +105,7 @@
     .meter { height:3px; background:var(--border); margin-top:6px; overflow:hidden; }
     .meter-bar { height:100%; transition:width 0.8s ease; }
     .vt-pills { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
-    .vt-pill { font-size:0.62rem; padding:3px 10px; border:1px solid var(--border); font-family:var(--sans); font-weight:500; }
+    .vt-pill { font-size:0.72rem; padding:4px 12px; border:1px solid var(--border); font-family:var(--sans); font-weight:600; }
     .vt-pill.mal { color:var(--red);    border-color:rgba(248,113,113,0.3); }
     .vt-pill.sus { color:var(--yellow); border-color:rgba(251,191,36,0.3); }
     .vt-pill.ok  { color:var(--green);  border-color:rgba(52,211,153,0.3); }
@@ -242,13 +242,17 @@
     .codesign-revoked { font-family:var(--sans); font-size:0.62rem; font-weight:700; letter-spacing:0.06em; color:var(--red); margin-top:5px; }
     .hash-type-badge { font-family:var(--sans); font-size:0.58rem; font-weight:600; letter-spacing:0.08em; padding:2px 8px; border:1px solid rgba(56,189,248,0.35); color:var(--accent); }
     .hash-threat-label { font-family:var(--sans); font-size:0.58rem; padding:2px 8px; border:1px solid rgba(248,113,113,0.3); color:var(--red); }
-    .hash-family-badge { font-family:var(--sans); font-size:0.58rem; padding:2px 8px; border:1px solid rgba(251,146,60,0.3); color:var(--orange); }
-    .hash-category-badge { font-family:var(--sans); font-size:0.58rem; padding:2px 8px; border:1px solid rgba(148,163,184,0.3); color:var(--text); }
+    .hash-family-badge { font-family:var(--sans); font-size:0.66rem; padding:3px 10px; border:1px solid rgba(251,146,60,0.3); color:var(--orange); font-weight:600; }
+    .hash-category-badge { font-family:var(--sans); font-size:0.66rem; padding:3px 10px; border:1px solid rgba(148,163,184,0.3); color:var(--text); font-weight:500; }
     .hash-source-link { font-family:var(--sans); font-size:0.56rem; font-weight:600; letter-spacing:0.06em; color:var(--muted); border:1px solid var(--border); padding:1px 7px; text-decoration:none; transition:all 0.15s; text-transform:uppercase; }
     .hash-source-link:hover { color:var(--accent); border-color:var(--accent); }
     .hash-source-link-na { font-family:var(--sans); font-size:0.56rem; font-weight:600; letter-spacing:0.06em; color:var(--dim); border:1px solid var(--dim); padding:1px 7px; text-transform:uppercase; opacity:0.6; cursor:default; }
     .tbl-link-chip { font-size:0.6rem; padding:1px 7px; border:1px solid rgba(56,189,248,0.3); color:var(--accent); text-decoration:none; font-family:var(--sans); font-weight:600; letter-spacing:0.04em; transition:all 0.15s; }
     .tbl-link-chip:hover { border-color:var(--accent); background:rgba(56,189,248,0.08); }
+    .tbl-link-chip.ab { color:var(--orange); border-color:rgba(251,146,60,0.3); }
+    .tbl-link-chip.ab:hover { border-color:var(--orange); background:rgba(251,146,60,0.08); }
+    .tbl-link-chip.ip { color:var(--green); border-color:rgba(52,211,153,0.3); }
+    .tbl-link-chip.ip:hover { border-color:var(--green); background:rgba(52,211,153,0.08); }
     .tbl-link-na { font-size:0.6rem; padding:1px 7px; border:1px solid rgba(78,100,128,0.3); color:var(--dim); font-family:var(--sans); font-weight:600; letter-spacing:0.04em; opacity:0.7; cursor:default; }
     .hash-tag { font-size:0.6rem; padding:3px 9px; border:1px solid var(--border); color:var(--text); background:rgba(255,255,255,0.03); font-family:var(--sans); }
     .vt-badge { font-size:0.62rem; padding:3px 10px; border:1px solid var(--border); font-family:var(--sans); font-weight:500; }
@@ -258,15 +262,15 @@
     .vt-badge.unk { color:var(--muted); border-color:rgba(78,100,128,0.3); }
 
     /* ── VT sub-section labels ── */
-    .vt-subsection-label { font-size:0.56rem; font-weight:700; letter-spacing:0.14em; text-transform:uppercase; color:var(--muted); margin-top:10px; margin-bottom:4px; }
+    .vt-subsection-label { font-size:0.62rem; font-weight:700; letter-spacing:0.14em; text-transform:uppercase; color:var(--muted); margin-top:10px; margin-bottom:4px; }
 
     /* ── Sandbox classification badges ── */
-    .sandbox-badge { font-size:0.58rem; padding:2px 8px; border:1px solid rgba(192,132,252,0.35); color:#c084fc; font-family:var(--sans); font-weight:600; letter-spacing:0.04em; }
+    .sandbox-badge { font-size:0.66rem; padding:3px 10px; border:1px solid rgba(192,132,252,0.35); color:#c084fc; font-family:var(--sans); font-weight:600; letter-spacing:0.04em; }
 
     /* ── Sigma rule pills ── */
     .sigma-block { background:rgba(255,255,255,0.02); border:1px solid var(--border); padding:8px 10px; margin-top:6px; }
     .sigma-ruleset { font-size:0.58rem; color:var(--muted); font-family:var(--mono); margin-bottom:4px; }
-    .sigma-pill { font-size:0.58rem; padding:2px 8px; border:1px solid; font-family:var(--sans); font-weight:600; }
+    .sigma-pill { font-size:0.66rem; padding:3px 10px; border:1px solid; font-family:var(--sans); font-weight:600; }
     .sigma-pill.critical { color:var(--red);    border-color:rgba(248,113,113,0.35); }
     .sigma-pill.high     { color:var(--orange);  border-color:rgba(251,146,60,0.35);  }
     .sigma-pill.medium   { color:var(--yellow);  border-color:rgba(251,191,36,0.35);  }
@@ -313,7 +317,8 @@
           <span class="text-xs px-2 py-1 border tracking-widest uppercase" style="font-size:0.56rem;border-color:rgba(56,189,248,0.4);color:#38bdf8">VirusTotal</span>
           <span class="text-xs px-2 py-1 border tracking-widest uppercase" style="font-size:0.56rem;border-color:rgba(251,146,60,0.4);color:#fb923c">AbuseIPDB</span>
           <span class="text-xs px-2 py-1 border tracking-widest uppercase" style="font-size:0.56rem;border-color:rgba(52,211,153,0.4);color:#34d399">IPAPI.IS</span>
-          <span class="text-xs px-2 py-1 border tracking-widest uppercase" style="font-size:0.56rem;border-color:rgba(192,132,252,0.4);color:#c084fc">MalwareBazaar</span>
+          <span class="text-xs px-2 py-1 border tracking-widest uppercase" style="font-size:0.56rem;border-color:rgba(192,132,252,0.4);color:#c084fc">abuse.ch</span>
+          <span class="text-xs px-2 py-1 border tracking-widest uppercase" style="font-size:0.56rem;border-color:rgba(251,191,36,0.4);color:#fbbf24">ThreatFox</span>
         </div>
 
         <!-- History drawer -->
@@ -414,8 +419,8 @@
           <input type="password" v-model="keys.ipapi" class="key-input" placeholder="Leave blank for free tier…">
         </div>
         <div>
-          <label class="block text-xs font-bold tracking-widest uppercase mb-2" style="color:#4d6480;font-size:0.58rem">MalwareBazaar <span style="color:#2e4060">(optional)</span></label>
-          <input type="password" v-model="keys.mb" class="key-input" placeholder="Optional — public lookups work without a key…">
+          <label class="block text-xs font-bold tracking-widest uppercase mb-2" style="color:#4d6480;font-size:0.58rem">abuse.ch <span style="color:#2e4060">(optional)</span></label>
+          <input type="password" v-model="keys.abusech" class="key-input" placeholder="Used for MalwareBazaar + ThreatFox…">
         </div>
       </div>
     </div>
@@ -492,8 +497,8 @@
           </div>
         </div>
 
-        <!-- IP chip tabs (multi-IP) -->
-        <div v-if="allResults.length > 1" class="flex flex-wrap gap-1 mb-4">
+        <!-- IP chip tabs (multi-IP, cards view only) -->
+        <div v-if="allResults.length > 1 && currentView==='cards'" class="flex flex-wrap gap-1 mb-4">
           <div v-for="(r, i) in allResults" :key="r.ip" class="ip-tab" :class="{active: i===activeIdx}" @click="switchTab(i)">
             <span class="ip-tab-dot" :style="{background: riskDotColor(r.result ? r.result.riskLevel : null)}"></span>
             {{ r.ip }}
@@ -520,27 +525,27 @@
                 </div>
               </div>
               <!-- AbuseIPDB card -->
-              <div v-if="colVisible.abuse && activeResult.abuseConfidenceScore != null" class="card" id="card-abuse">
+              <div v-if="colVisible.abuse && activeResult.abuseipdb.confidenceScore != null" class="card" id="card-abuse">
                 <div class="card-head">
                   <span class="card-head-left">🚨 AbuseIPDB</span>
                   <a :href="'https://www.abuseipdb.com/check/'+activeResultIP" target="_blank" rel="noopener" class="card-source-link">↗ AbuseIPDB</a>
                 </div>
                 <div class="kv" v-show="fieldVisible['ab-score']">
                   <span class="kv-key">Confidence</span>
-                  <span class="kv-val" :style="{color: abuseColor(activeResult.abuseConfidenceScore), fontWeight:600}">{{ activeResult.abuseConfidenceScore }}%</span>
+                  <span class="kv-val" :style="{color: abuseColor(activeResult.abuseipdb.confidenceScore), fontWeight:600}">{{ activeResult.abuseipdb.confidenceScore }}%</span>
                 </div>
                 <div class="meter" v-show="fieldVisible['ab-meter']">
-                  <div class="meter-bar" :style="{width: activeResult.abuseConfidenceScore+'%', background: abuseColor(activeResult.abuseConfidenceScore)}"></div>
+                  <div class="meter-bar" :style="{width: activeResult.abuseipdb.confidenceScore+'%', background: abuseColor(activeResult.abuseipdb.confidenceScore)}"></div>
                 </div>
                 <div class="kv" v-show="fieldVisible['ab-reports']">
-                  <span class="kv-key">Total Reports</span><span class="kv-val">{{ activeResult.totalReports ?? '—' }}</span>
+                  <span class="kv-key">Total Reports</span><span class="kv-val">{{ activeResult.abuseipdb.totalReports ?? '—' }}</span>
                 </div>
                 <div class="kv" v-show="fieldVisible['ab-lastreport']">
-                  <span class="kv-key">Last Reported</span><span class="kv-val">{{ activeResult.lastReportedAt || '—' }}</span>
+                  <span class="kv-key">Last Reported</span><span class="kv-val">{{ activeResult.abuseipdb.lastReportedAt || '—' }}</span>
                 </div>
               </div>
               <!-- VirusTotal card -->
-              <div v-if="colVisible.vt && activeResult.vtMalicious != null" class="card" id="card-vt">
+              <div v-if="colVisible.vt && activeResult.virustotal.malicious != null" class="card" id="card-vt">
                 <div class="card-head">
                   <span class="card-head-left">🧪 VirusTotal</span>
                   <a :href="'https://www.virustotal.com/gui/ip-address/'+activeResultIP" target="_blank" rel="noopener" class="card-source-link">↗ VirusTotal</a>
@@ -549,10 +554,70 @@
                   <span class="kv-key">Summary (S/U/H)</span><span class="kv-val">{{ activeResult['vtStats_S_U_H'] || '—' }}</span>
                 </div>
                 <div class="vt-pills">
-                  <span v-show="fieldVisible['vt-malicious']"  class="vt-pill mal">🔴 Malicious: {{ activeResult.vtMalicious }}</span>
-                  <span v-show="fieldVisible['vt-suspicious']" class="vt-pill sus">🟡 Suspicious: {{ activeResult.vtSuspicious ?? 0 }}</span>
+                  <span v-show="fieldVisible['vt-malicious']"  class="vt-pill mal">🔴 Malicious: {{ activeResult.virustotal.malicious }}</span>
+                  <span v-show="fieldVisible['vt-suspicious']" class="vt-pill sus">🟡 Suspicious: {{ activeResult.virustotal.suspicious ?? 0 }}</span>
                   <span v-show="fieldVisible['vt-harmless']"   class="vt-pill ok">🟢 Harmless: {{ vtStatPart(2) }}</span>
                   <span v-show="fieldVisible['vt-undetected']" class="vt-pill unk">⬜ Undetected: {{ vtStatPart(1) }}</span>
+                </div>
+              </div>
+              <!-- ThreatFox card (IP mode) -->
+              <div v-if="activeResult.threatfox" class="card" id="card-tf">
+                <div class="card-head">
+                  <span class="card-head-left">🦊 ThreatFox</span>
+                  <div class="flex items-center gap-2">
+                    <span v-if="activeResult.threatfox.queryStatus === 'ok'" class="mb-found-badge">✓ Found</span>
+                    <span v-else class="mb-notfound-badge">✗ {{ activeResult.threatfox.queryStatus || 'No Result' }}</span>
+                    <a :href="'https://threatfox.abuse.ch/browse.php?search=ioc%3A'+activeResultIP" target="_blank" rel="noopener" class="card-source-link">↗ ThreatFox</a>
+                  </div>
+                </div>
+                <template v-if="activeResult.threatfox.queryStatus === 'ok'">
+                  <div v-if="activeResult.threatfox.malware" class="kv">
+                    <span class="kv-key">Malware</span>
+                    <span class="kv-val" style="color:var(--red);font-weight:600">{{ activeResult.threatfox.malware }}</span>
+                  </div>
+                  <div v-if="activeResult.threatfox.threatType" class="kv">
+                    <span class="kv-key">Threat Type</span><span class="kv-val">{{ activeResult.threatfox.threatType }}</span>
+                  </div>
+                  <div v-if="activeResult.threatfox.malwareAlias" class="kv">
+                    <span class="kv-key">Aliases</span>
+                    <span class="kv-val" style="color:var(--text1);font-size:0.68rem">{{ activeResult.threatfox.malwareAlias }}</span>
+                  </div>
+                  <div v-if="activeResult.threatfox.confidenceLevel != null" class="kv">
+                    <span class="kv-key">Confidence</span>
+                    <span class="kv-val" :style="{color: activeResult.threatfox.confidenceLevel >= 75 ? 'var(--red)' : activeResult.threatfox.confidenceLevel >= 50 ? 'var(--orange)' : 'var(--yellow)', fontWeight:600}">
+                    {{ activeResult.threatfox.confidenceLevel }}%
+                  </span>
+                  </div>
+                  <div v-if="activeResult.threatfox.firstSeen" class="kv">
+                    <span class="kv-key">First Seen</span><span class="kv-val">{{ activeResult.threatfox.firstSeen }}</span>
+                  </div>
+                  <div v-if="activeResult.threatfox.lastSeen" class="kv">
+                    <span class="kv-key">Last Seen</span><span class="kv-val">{{ activeResult.threatfox.lastSeen }}</span>
+                  </div>
+                  <div v-if="activeResult.threatfox.reporter" class="kv">
+                    <span class="kv-key">Reporter</span>
+                    <span class="kv-val" style="color:var(--text1)">{{ activeResult.threatfox.reporter }}</span>
+                  </div>
+                  <!-- Tags -->
+                  <div v-if="activeResult.threatfox.tags && activeResult.threatfox.tags.length" class="hash-tags mt-2">
+                    <span v-for="tag in activeResult.threatfox.tags" :key="tag" class="hash-tag">{{ tag }}</span>
+                  </div>
+                  <!-- Malware samples table -->
+                  <div v-if="activeResult.threatfox.malwareSamples && activeResult.threatfox.malwareSamples.length" class="mt-3">
+                    <div class="vt-subsection-label">Associated Samples</div>
+                    <div v-for="s in activeResult.threatfox.malwareSamples" :key="s.sha256_hash" class="kv mt-1" style="align-items:flex-start">
+                      <span class="kv-key" style="font-size:0.58rem;padding-top:2px">SHA256</span>
+                      <span class="kv-val" style="font-size:0.58rem;word-break:break-all">
+                      <a v-if="s.malware_bazaar" :href="s.malware_bazaar" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none">{{ s.sha256_hash }}</a>
+                      <span v-else>{{ s.sha256_hash }}</span>
+                    </span>
+                    </div>
+                  </div>
+                </template>
+                <div v-if="activeResult.threatfox.queryStatus !== 'ok'" class="kv mt-2">
+                  <span class="kv-val" style="color:var(--muted);font-style:italic;font-size:0.68rem">
+                    {{ activeResult.threatfox.queryStatus === 'no_results' ? 'No ThreatFox intelligence for this IP.' : activeResult.threatfox.queryStatus }}
+                  </span>
                 </div>
               </div>
             </div>
@@ -651,7 +716,7 @@
         <div v-if="allHashResults.length > 1 && hashView==='cards'" class="flex flex-wrap gap-1 mb-4">
           <div v-for="(e, i) in allHashResults" :key="i" class="ip-tab" :class="{active: i===activeHashIdx}" @click="activeHashIdx=i">
             <span class="ip-tab-dot" :style="{background: riskDotColor((e.result||e).riskLevel)}"></span>
-            {{ ((e.result||e).sha256||(e.result||e).sha1||(e.result||e).md5||e.hash||'?').slice(0,12) }}…
+            {{ ((e.result||e).virustotal?.sha256||(e.result||e).virustotal?.sha1||(e.result||e).virustotal?.md5||e.hash||'?').slice(0,12) }}…
           </div>
         </div>
 
@@ -662,11 +727,11 @@
             <!-- ── Card header: hash value + badges + source links ── -->
             <div class="hash-card-header">
               <div style="flex:1;min-width:0">
-                <div class="hash-card-title">{{ activeHashResult.sha256 || activeHashResult.sha1 || activeHashResult.md5 || allHashResults[activeHashIdx]?.hash || '—' }}</div>
+                <div class="hash-card-title">{{ activeHashResult.virustotal.sha256 || activeHashResult.virustotal.sha1 || activeHashResult.virustotal.md5 || allHashResults[activeHashIdx]?.hash || '—' }}</div>
                 <div class="hash-card-meta">
                   <span v-if="activeHashResult.riskLevel" :class="['risk-pill','risk-'+(activeHashResult.riskLevel)]">{{ activeHashResult.riskLevel }}</span>
                   <span v-if="activeHashResult.hashType"  class="hash-type-badge">{{ activeHashResult.hashType }}</span>
-                  <span v-if="activeHashResult.suggestedThreatLabel" class="hash-threat-label">{{ activeHashResult.suggestedThreatLabel }}</span>
+                  <span v-if="activeHashResult.virustotal.suggestedThreatLabel" class="hash-threat-label">{{ activeHashResult.virustotal.suggestedThreatLabel }}</span>
                 </div>
               </div>
               <div class="flex gap-2" style="flex-shrink:0">
@@ -674,25 +739,25 @@
                 <a v-if="hashResultLinks.virustotal && !vtNotFound" :href="hashResultLinks.virustotal" target="_blank" rel="noopener" class="hash-source-link">↗ VT</a>
                 <span v-else-if="vtNotFound" class="hash-source-link-na" title="Hash not found in VirusTotal">✗ VT</span>
                 <!-- MB link: show "Not in MB" when hash not found -->
-                <a v-if="hashResultLinks.malwarebazaar && activeHashResult.mbQueryStatus === 'ok'" :href="hashResultLinks.malwarebazaar" target="_blank" rel="noopener" class="hash-source-link">↗ MB</a>
-                <span v-else-if="activeHashResult.mbQueryStatus && activeHashResult.mbQueryStatus !== 'ok'" class="hash-source-link-na" title="Hash not found in MalwareBazaar">✗ MB</span>
+                <a v-if="hashResultLinks.malwarebazaar && activeHashResult.malwarebazaar.queryStatus === 'ok'" :href="hashResultLinks.malwarebazaar" target="_blank" rel="noopener" class="hash-source-link">↗ MB</a>
+                <span v-else-if="activeHashResult.malwarebazaar.queryStatus && activeHashResult.malwarebazaar.queryStatus !== 'ok'" class="hash-source-link-na" title="Hash not found in MalwareBazaar">✗ MB</span>
               </div>
             </div>
 
             <!-- ── Hash Values row (full-width, FIRST — above the cards) ── -->
             <div class="border-b mb-4 pb-4" style="border-color:#1e2d42">
               <div class="hash-section-title" style="margin-bottom:8px">⬡ Hash Values</div>
-              <div v-if="activeHashResult.md5"    class="kv" style="border-top:1px solid rgba(30,45,66,0.6)">
+              <div v-if="activeHashResult.virustotal.md5"    class="kv">
                 <span class="kv-key">MD5</span>
-                <span class="kv-val" style="font-size:0.6rem;color:#4d6480;word-break:break-all">{{ activeHashResult.md5 }}</span>
+                <span class="kv-val">{{ activeHashResult.virustotal.md5 }}</span>
               </div>
-              <div v-if="activeHashResult.sha1"   class="kv" style="border-top:1px solid rgba(30,45,66,0.6)">
+              <div v-if="activeHashResult.virustotal.sha1"   class="kv">
                 <span class="kv-key">SHA1</span>
-                <span class="kv-val" style="font-size:0.6rem;color:#4d6480;word-break:break-all">{{ activeHashResult.sha1 }}</span>
+                <span class="kv-val">{{ activeHashResult.virustotal.sha1 }}</span>
               </div>
-              <div v-if="activeHashResult.sha256" class="kv" style="border-top:1px solid rgba(30,45,66,0.6)">
+              <div v-if="activeHashResult.virustotal.sha256" class="kv">
                 <span class="kv-key">SHA256</span>
-                <span class="kv-val" style="font-size:0.6rem;color:#4d6480;word-break:break-all">{{ activeHashResult.sha256 }}</span>
+                <span class="kv-val">{{ activeHashResult.virustotal.sha256 }}</span>
               </div>
             </div>
 
@@ -704,25 +769,25 @@
                 <div class="card-head">
                   <span class="card-head-left">📄 File Info</span>
                 </div>
-                <div v-if="activeHashResult.meaningfulName" class="kv">
-                  <span class="kv-key">Name</span><span class="kv-val">{{ activeHashResult.meaningfulName }}</span>
+                <div v-if="activeHashResult.virustotal.meaningfulName" class="kv">
+                  <span class="kv-key">Name</span><span class="kv-val">{{ activeHashResult.virustotal.meaningfulName }}</span>
                 </div>
-                <div v-if="activeHashResult.magic" class="kv">
-                  <span class="kv-key">Magic</span><span class="kv-val">{{ activeHashResult.magic }}</span>
+                <div v-if="activeHashResult.virustotal.magic" class="kv">
+                  <span class="kv-key">Magic</span><span class="kv-val">{{ activeHashResult.virustotal.magic }}</span>
                 </div>
-                <div v-if="activeHashResult.magika" class="kv">
-                  <span class="kv-key">Magika</span><span class="kv-val">{{ activeHashResult.magika }}</span>
+                <div v-if="activeHashResult.virustotal.magika" class="kv">
+                  <span class="kv-key">Magika</span><span class="kv-val">{{ activeHashResult.virustotal.magika }}</span>
                 </div>
-                <div v-if="activeHashResult.fileSize" class="kv">
-                  <span class="kv-key">Size</span><span class="kv-val">{{ formatBytes(activeHashResult.fileSize) }}</span>
+                <div v-if="activeHashResult.virustotal?.fileSize" class="kv">
+                  <span class="kv-key">Size</span><span class="kv-val">{{ formatBytes(activeHashResult.virustotal.fileSize) }}</span>
                 </div>
                 <!-- Signer names -->
-                <div v-if="toArr(activeHashResult.signatureSigners).length" class="kv">
+                <div v-if="toArr(activeHashResult.virustotal.signatureSigners).length" class="kv">
                   <span class="kv-key">Signer</span>
-                  <span class="kv-val">{{ toArr(activeHashResult.signatureSigners).join(', ') }}</span>
+                  <span class="kv-val">{{ toArr(activeHashResult.virustotal.signatureSigners).join(', ') }}</span>
                 </div>
                 <!-- Code signing detail box — with revocation status -->
-                <div v-if="toArr(activeHashResult.signatureSigners).length" class="codesign-box">
+                <div v-if="toArr(activeHashResult.virustotal.signatureSigners).length" class="codesign-box">
                   <div class="flex items-center gap-2 mb-1">
                     <span style="font-size:0.62rem;color:#f87171;font-weight:700">⚠ Code Signed</span>
                     <!-- Revocation badge parsed from signerDetail.status -->
@@ -737,16 +802,16 @@
                     <div class="codesign-status mt-1">{{ signerDetailObj.status }}</div>
                   </template>
                   <!-- Fallback for plain string signerDetail -->
-                  <div v-else-if="activeHashResult.signerDetail" class="codesign-revoked">{{ activeHashResult.signerDetail }}</div>
+                  <div v-else-if="activeHashResult.virustotal.signerDetail" class="codesign-revoked">{{ activeHashResult.virustotal.signerDetail }}</div>
                 </div>
                 <!-- Fallback when no file info at all -->
-                <div v-if="!activeHashResult.meaningfulName && !activeHashResult.magic && !activeHashResult.magika && !activeHashResult.fileSize" class="kv">
+                <div v-if="!activeHashResult.virustotal.meaningfulName && !activeHashResult.virustotal.magic && !activeHashResult.virustotal.magika && !activeHashResult.virustotal?.fileSize" class="kv">
                   <span class="kv-key" style="font-style:italic;color:var(--dim)">No file info available</span>
                 </div>
               </div>
 
               <!-- VIRUSTOTAL card — shown always (has data or not-found state) -->
-              <div v-if="activeHashResult.vtMalicious != null || vtNotFound" class="card">
+              <div v-if="activeHashResult.virustotal.malicious != null || vtNotFound" class="card">
                 <div class="card-head">
                   <span class="card-head-left">🧪 VirusTotal</span>
                   <div class="flex items-center gap-2">
@@ -765,48 +830,48 @@
                 <!-- Found state: detection pills -->
                 <template v-else>
                   <div class="vt-pills">
-                    <span class="vt-pill mal">🔴 Malicious: {{ activeHashResult.vtMalicious }}</span>
-                    <span class="vt-pill sus">🟡 Suspicious: {{ activeHashResult.vtSuspicious ?? 0 }}</span>
-                    <span v-if="activeHashResult.vtHarmless   != null" class="vt-pill ok" >🟢 Harmless: {{ activeHashResult.vtHarmless }}</span>
-                    <span v-if="activeHashResult.vtUndetected != null" class="vt-pill unk">⬜ Undetected: {{ activeHashResult.vtUndetected }}</span>
+                    <span class="vt-pill mal">🔴 Malicious: {{ activeHashResult.virustotal.malicious }}</span>
+                    <span class="vt-pill sus">🟡 Suspicious: {{ activeHashResult.virustotal.suspicious ?? 0 }}</span>
+                    <span v-if="activeHashResult.virustotal.harmless   != null" class="vt-pill ok" >🟢 Harmless: {{ activeHashResult.virustotal.harmless }}</span>
+                    <span v-if="activeHashResult.virustotal.undetected != null" class="vt-pill unk">⬜ Undetected: {{ activeHashResult.virustotal.undetected }}</span>
                   </div>
 
                   <!-- VT Reputation score -->
-                  <div v-if="activeHashResult.vtReputation != null" class="kv mt-3">
+                  <div v-if="activeHashResult.virustotal.reputation != null" class="kv mt-3">
                     <span class="kv-key">Reputation</span>
-                    <span class="kv-val" :style="{color: activeHashResult.vtReputation < 0 ? 'var(--red)' : activeHashResult.vtReputation > 0 ? 'var(--green)' : 'var(--muted)'}">
-                      {{ activeHashResult.vtReputation > 0 ? '+' : '' }}{{ activeHashResult.vtReputation }}
+                    <span class="kv-val" :style="{color: activeHashResult.virustotal.reputation < 0 ? 'var(--red)' : activeHashResult.virustotal.reputation > 0 ? 'var(--green)' : 'var(--muted)'}">
+                      {{ activeHashResult.virustotal.reputation > 0 ? '+' : '' }}{{ activeHashResult.virustotal.reputation }}
                     </span>
                   </div>
 
                   <!-- Threat family names -->
-                  <div v-if="toArr(activeHashResult.popularThreatNames).length" class="mt-3">
+                  <div v-if="toArr(activeHashResult.virustotal.popularThreatNames).length" class="mt-3">
                     <div class="vt-subsection-label">Threat Names</div>
                     <div class="flex flex-wrap gap-1 mt-1">
-                      <span v-for="n in toArr(activeHashResult.popularThreatNames)" :key="n" class="hash-family-badge">{{ n }}</span>
+                      <span v-for="n in toArr(activeHashResult.virustotal.popularThreatNames)" :key="n" class="hash-family-badge">{{ n }}</span>
                     </div>
                   </div>
 
                   <!-- Threat categories -->
-                  <div v-if="toArr(activeHashResult.popularThreatCategories).length" class="mt-3">
+                  <div v-if="toArr(activeHashResult.virustotal.popularThreatCategories).length" class="mt-3">
                     <div class="vt-subsection-label">Threat Categories</div>
                     <div class="flex flex-wrap gap-1 mt-1">
-                      <span v-for="c in toArr(activeHashResult.popularThreatCategories)" :key="c" class="hash-category-badge">{{ c }}</span>
+                      <span v-for="c in toArr(activeHashResult.virustotal.popularThreatCategories)" :key="c" class="hash-category-badge">{{ c }}</span>
                     </div>
                   </div>
 
                   <!-- Sandbox classifications -->
-                  <div v-if="toArr(activeHashResult.sandboxMalwareClassifications).length" class="mt-3">
+                  <div v-if="toArr(activeHashResult.virustotal.sandboxMalwareClassifications).length" class="mt-3">
                     <div class="vt-subsection-label">Sandbox Classifications</div>
                     <div class="flex flex-wrap gap-1 mt-1">
-                      <span v-for="s in toArr(activeHashResult.sandboxMalwareClassifications)" :key="s" class="sandbox-badge">{{ s }}</span>
+                      <span v-for="s in toArr(activeHashResult.virustotal.sandboxMalwareClassifications)" :key="s" class="sandbox-badge">{{ s }}</span>
                     </div>
                   </div>
 
                   <!-- Sigma analysis summary -->
-                  <div v-if="activeHashResult.sigmaAnalysisSummary && Object.keys(activeHashResult.sigmaAnalysisSummary).length" class="mt-3">
+                  <div v-if="activeHashResult.virustotal.sigmaAnalysisSummary && Object.keys(activeHashResult.virustotal.sigmaAnalysisSummary).length" class="mt-3">
                     <div class="vt-subsection-label">Sigma Rules</div>
-                    <div v-for="(counts, ruleset) in activeHashResult.sigmaAnalysisSummary" :key="ruleset" class="sigma-block mt-1">
+                    <div v-for="(counts, ruleset) in activeHashResult.virustotal.sigmaAnalysisSummary" :key="ruleset" class="sigma-block mt-1">
                       <div class="sigma-ruleset">{{ ruleset }}</div>
                       <div class="flex flex-wrap gap-1 mt-1">
                         <span v-if="counts.critical" class="sigma-pill critical">🔴 Critical: {{ counts.critical }}</span>
@@ -820,39 +885,91 @@
               </div>
 
               <!-- MALWAREBAZAAR card -->
-              <div v-if="activeHashResult.mbQueryStatus" class="card">
+              <div v-if="activeHashResult.malwarebazaar.queryStatus" class="card">
                 <div class="card-head">
                   <span class="card-head-left">🦠 MalwareBazaar</span>
                   <div class="flex items-center gap-2">
-                    <span v-if="activeHashResult.mbQueryStatus==='ok'" class="mb-found-badge">✓ Found</span>
+                    <span v-if="activeHashResult.malwarebazaar.queryStatus==='ok'" class="mb-found-badge">✓ Found</span>
                     <span v-else class="mb-notfound-badge">✗ Not Found</span>
                     <a v-if="hashResultLinks.malwarebazaar" :href="hashResultLinks.malwarebazaar" target="_blank" rel="noopener" class="card-source-link">↗ MB</a>
                   </div>
                 </div>
-                <template v-if="activeHashResult.mbQueryStatus === 'ok'">
-                  <div v-if="activeHashResult.mbSignature" class="kv">
+                <template v-if="activeHashResult.malwarebazaar.queryStatus === 'ok'">
+                  <div v-if="activeHashResult.malwarebazaar.signature" class="kv">
                     <span class="kv-key">Signature</span>
-                    <span class="kv-val" style="color:var(--red);font-weight:600">{{ activeHashResult.mbSignature }}</span>
+                    <span class="kv-val" style="color:var(--red);font-weight:600">{{ activeHashResult.malwarebazaar.signature }}</span>
                   </div>
-                  <div v-if="activeHashResult.mbFileName" class="kv">
-                    <span class="kv-key">File Name</span><span class="kv-val">{{ activeHashResult.mbFileName }}</span>
+                  <div v-if="activeHashResult.malwarebazaar.fileName" class="kv">
+                    <span class="kv-key">File Name</span><span class="kv-val">{{ activeHashResult.malwarebazaar.fileName }}</span>
                   </div>
-                  <div v-if="activeHashResult.mbFileType" class="kv">
+                  <div v-if="activeHashResult.malwarebazaar.fileType" class="kv">
                     <span class="kv-key">File Type</span>
-                    <span class="kv-val"><span class="filetype-badge">{{ activeHashResult.mbFileType }}</span></span>
+                    <span class="kv-val"><span class="filetype-badge">{{ activeHashResult.malwarebazaar.fileType }}</span></span>
                   </div>
-                  <div v-if="activeHashResult.mbComment" class="kv" style="align-items:flex-start">
+                  <div v-if="activeHashResult.malwarebazaar.comment" class="kv" style="align-items:flex-start">
                     <span class="kv-key" style="padding-top:2px">Comment</span>
-                    <span class="kv-val mb-comment">{{ activeHashResult.mbComment }}</span>
+                    <span class="kv-val mb-comment">{{ activeHashResult.malwarebazaar.comment }}</span>
                   </div>
                   <!-- MB Tags -->
-                  <div v-if="toArr(activeHashResult.mbTags).length" class="hash-tags">
-                    <span v-for="tag in toArr(activeHashResult.mbTags)" :key="tag" class="hash-tag">{{ tag }}</span>
+                  <div v-if="toArr(activeHashResult.malwarebazaar.tags).length" class="hash-tags">
+                    <span v-for="tag in toArr(activeHashResult.malwarebazaar.tags)" :key="tag" class="hash-tag">{{ tag }}</span>
                   </div>
                 </template>
                 <div v-else class="kv mt-2">
                   <span class="kv-val" style="color:var(--muted);font-style:italic;font-size:0.68rem">
-                    {{ activeHashResult.mbQueryStatus === 'hash_not_found' ? 'This hash is not indexed in MalwareBazaar.' : activeHashResult.mbQueryStatus }}
+                    {{ activeHashResult.malwarebazaar.queryStatus === 'hash_not_found' ? 'This hash is not indexed in MalwareBazaar.' : activeHashResult.malwarebazaar.queryStatus }}
+                  </span>
+                </div>
+              </div>
+
+              <!-- THREATFOX card (hash mode) -->
+              <div v-if="activeHashResult.threatfox" class="card">
+                <div class="card-head">
+                  <span class="card-head-left">🦊 ThreatFox</span>
+                  <div class="flex items-center gap-2">
+                    <span v-if="activeHashResult.threatfox.queryStatus === 'ok'" class="mb-found-badge">✓ Found</span>
+                    <span v-else class="mb-notfound-badge">✗ {{ activeHashResult.threatfox.queryStatus || 'No Result' }}</span>
+                    <a :href="'https://threatfox.abuse.ch/browse.php?search=ioc%3A'+(activeHashResult.virustotal.sha256||activeHashResult.virustotal.md5||'')" target="_blank" rel="noopener" class="card-source-link">↗ ThreatFox</a>
+                  </div>
+                </div>
+                <template v-if="activeHashResult.threatfox.queryStatus === 'ok' && activeHashResult.threatfox.iocs && activeHashResult.threatfox.iocs.length">
+                  <!-- Show first IOC's top-level fields -->
+                  <div v-if="activeHashResult.threatfox.iocs[0].malware" class="kv">
+                    <span class="kv-key">Malware</span>
+                    <span class="kv-val" style="color:var(--red);font-weight:600">{{ activeHashResult.threatfox.iocs[0].malware }}</span>
+                  </div>
+                  <div v-if="activeHashResult.threatfox.iocs[0].threatType" class="kv">
+                    <span class="kv-key">Threat Type</span><span class="kv-val">{{ activeHashResult.threatfox.iocs[0].threatType }}</span>
+                  </div>
+                  <div v-if="activeHashResult.threatfox.iocs[0].malwareAlias" class="kv">
+                    <span class="kv-key">Aliases</span>
+                    <span class="kv-val" style="color:var(--text1);font-size:0.68rem">{{ activeHashResult.threatfox.iocs[0].malwareAlias }}</span>
+                  </div>
+                  <div v-if="activeHashResult.threatfox.iocs[0].confidenceLevel != null" class="kv">
+                    <span class="kv-key">Confidence</span>
+                    <span class="kv-val" :style="{color: activeHashResult.threatfox.iocs[0].confidenceLevel >= 75 ? 'var(--red)' : activeHashResult.threatfox.iocs[0].confidenceLevel >= 50 ? 'var(--orange)' : 'var(--yellow)', fontWeight:600}">
+                      {{ activeHashResult.threatfox.iocs[0].confidenceLevel }}%
+                    </span>
+                  </div>
+                  <div v-if="activeHashResult.threatfox.iocs[0].firstSeen" class="kv">
+                    <span class="kv-key">First Seen</span><span class="kv-val">{{ activeHashResult.threatfox.iocs[0].firstSeen }}</span>
+                  </div>
+                  <!-- Tags from first IOC -->
+                  <div v-if="activeHashResult.threatfox.iocs[0].tags && activeHashResult.threatfox.iocs[0].tags.length" class="hash-tags mt-2">
+                    <span v-for="tag in activeHashResult.threatfox.iocs[0].tags" :key="tag" class="hash-tag">{{ tag }}</span>
+                  </div>
+                  <!-- Associated IOC URLs -->
+                  <div v-if="activeHashResult.threatfox.iocs.length > 1" class="mt-3">
+                    <div class="vt-subsection-label">Associated IOCs ({{ activeHashResult.threatfox.iocs.length }})</div>
+                    <div v-for="entry in activeHashResult.threatfox.iocs" :key="entry.ioc" class="kv mt-1">
+                      <span class="kv-key" style="font-size:0.58rem">IOC</span>
+                      <span class="kv-val" style="font-size:0.62rem;word-break:break-all;color:var(--text1)">{{ entry.ioc }}</span>
+                    </div>
+                  </div>
+                </template>
+                <div v-if="activeHashResult.threatfox.queryStatus !== 'ok'" class="kv mt-2">
+                  <span class="kv-val" style="color:var(--muted);font-style:italic;font-size:0.68rem">
+                    {{ activeHashResult.threatfox.queryStatus === 'no_results' ? 'No ThreatFox intelligence for this hash.' : activeHashResult.threatfox.queryStatus }}
                   </span>
                 </div>
               </div>
@@ -904,7 +1021,7 @@
     setup() {
 
       // ─── State ───────────────────────────────────────────────────────────────
-      const keys        = reactive({ vt:'', abuse:'', ipapi:'', mb:'' });
+      const keys        = reactive({ vt:'', abuse:'', ipapi:'', abusech:'' });
       const scanMode    = ref('complex');
       const ipInputText = ref('');
       const hashInputText = ref('');
@@ -945,7 +1062,7 @@
       // Now :class="{on: colVisible[key]}" binds directly — no _setTog needed.
 
       const colVisible = reactive({
-        risk: true, network: true, abuse: true, vt: true, json: true,
+        risk: true, network: true, abuse: true, vt: true, links: true, json: true,
       });
       const fieldVisible = reactive({
         'net-ip':true,'net-isp':true,'net-country':true,'net-city':true,
@@ -953,11 +1070,13 @@
         'ab-score':true,'ab-meter':true,'ab-reports':true,'ab-lastreport':true,
         'vt-malicious':true,'vt-suspicious':true,'vt-harmless':true,
         'vt-undetected':true,'vt-summary':true,
+        'link-vt':true,'link-abuse':true,'link-ipapi':true,
       });
       const SECTION_FIELDS = {
         network: ['net-ip','net-isp','net-country','net-city','net-tz','net-public','net-wl','net-hostnames'],
         abuse:   ['ab-score','ab-meter','ab-reports','ab-lastreport'],
         vt:      ['vt-malicious','vt-suspicious','vt-harmless','vt-undetected','vt-summary'],
+        links:   ['link-vt','link-abuse','link-ipapi'],
       };
 
       const hashDynCols   = reactive([]);
@@ -972,7 +1091,8 @@
         mbFileName:'MB File Name',mbFileType:'MB Type',mbTags:'MB Tags',mbComment:'MB Comment',
         signatureSigners:'Code Signer',sigmaAnalysisSummary:'Sigma',
         sandboxMalwareClassifications:'Sandbox',signerDetail:'Signer Detail',
-        md5:'Md5',sha1:'Sha1',sha256:'Sha256',links:'Links',
+        md5:'Md5',sha1:'Sha1',sha256:'Sha256',
+        link_virustotal:'VT Link', link_malwarebazaar:'MB Link',
       };
       const HASH_COL_ORDER = [
         'riskLevel','hashType','meaningfulName','magic','magika',
@@ -981,16 +1101,18 @@
         'mbQueryStatus','mbSignature','mbFileName','mbFileType','mbTags','mbComment',
         'signatureSigners','sigmaAnalysisSummary','sandboxMalwareClassifications',
         'signerDetail','md5','sha1','sha256',
+        'link_virustotal','link_malwarebazaar',
       ];
       const HASH_COL_HIDDEN_DEFAULT = new Set([
         'popularThreatCategories','popularThreatNames','sigmaAnalysisSummary',
         'sandboxMalwareClassifications','signerDetail','md5','sha1','sha256','rawVT','rawMB',
       ]);
       const HASH_SECTION_DEFS = [
-        { key:'hfile', icon:'📄', label:'File Info',     keys:['riskLevel','hashType','meaningfulName','magic','magika','signatureSigners','signerDetail'] },
-        { key:'hvt',   icon:'🧪', label:'VirusTotal',    keys:['vtMalicious','vtSuspicious','vtHarmless','vtUndetected','vtReputation','suggestedThreatLabel','popularThreatCategories','popularThreatNames','sigmaAnalysisSummary','sandboxMalwareClassifications'] },
-        { key:'hmb',   icon:'🦠', label:'MalwareBazaar', keys:['mbQueryStatus','mbSignature','mbFileName','mbFileType','mbTags','mbComment'] },
-        { key:'hhash', icon:'⬡',  label:'Hash Values',   keys:['md5','sha1','sha256'] },
+        { key:'hfile',  icon:'📄', label:'File Info',     keys:['riskLevel','hashType','meaningfulName','magic','magika','signatureSigners','signerDetail'] },
+        { key:'hvt',    icon:'🧪', label:'VirusTotal',    keys:['vtMalicious','vtSuspicious','vtHarmless','vtUndetected','vtReputation','suggestedThreatLabel','popularThreatCategories','popularThreatNames','sigmaAnalysisSummary','sandboxMalwareClassifications'] },
+        { key:'hmb',    icon:'🦠', label:'MalwareBazaar', keys:['mbQueryStatus','mbSignature','mbFileName','mbFileType','mbTags','mbComment'] },
+        { key:'hhash',  icon:'⬡',  label:'Hash Values',   keys:['md5','sha1','sha256'] },
+        { key:'hlinks', icon:'🔗', label:'Links',         keys:['link_virustotal','link_malwarebazaar'] },
       ];
 
       // ─── Column toggle functions (BUG FIX: no _setTog, pure state mutation) ──
@@ -1005,7 +1127,7 @@
         if (c) { c.visible = !c.visible; hashColVisible[key] = c.visible; }
       }
       function toggleHashSection(secKey) {
-        const KEYS = { hfile:HASH_SECTION_DEFS[0].keys, hvt:HASH_SECTION_DEFS[1].keys, hmb:HASH_SECTION_DEFS[2].keys, hhash:HASH_SECTION_DEFS[3].keys };
+        const KEYS = Object.fromEntries(HASH_SECTION_DEFS.map(d => [d.key, d.keys]));
         let cols;
         if (secKey === 'hother') {
           const allKeyed = new Set(Object.values(KEYS).flat());
@@ -1046,30 +1168,36 @@
         if (d.riskLevel != null) sections.push({ key:'risk', icon:'🏷', label:'Risk Pill', fields:[] });
         const netFields = [
           { key:'net-ip', label:'IP Address', present:!!(d.ipAddress||d.ip) },
-          { key:'net-isp', label:'ISP', present:!!(d.isp||d.asn_org) },
-          { key:'net-country', label:'Country', present:!!(d.country||d.countryCode) },
-          { key:'net-city', label:'City', present:!!d.city },
-          { key:'net-tz', label:'Timezone', present:!!d.timezone },
-          { key:'net-public', label:'Public', present:d.isPublic!=null },
-          { key:'net-wl', label:'Whitelisted', present:d.isWhitelisted!=null },
+          { key:'net-isp', label:'ISP', present:!!(d.geo?.isp||d.geo?.asn_org) },
+          { key:'net-country', label:'Country', present:!!(d.geo?.country||d.geo?.countryCode) },
+          { key:'net-city', label:'City', present:!!d.geo?.city },
+          { key:'net-tz', label:'Timezone', present:!!d.geo?.timezone },
+          { key:'net-public', label:'Public', present:d.geo?.isPublic!=null },
+          { key:'net-wl', label:'Whitelisted', present:d.geo?.isWhitelisted!=null },
           { key:'net-hostnames', label:'Hostnames', present:true },
         ].filter(f=>f.present);
         if (netFields.length) sections.push({ key:'network', icon:'🌍', label:'Network Info', fields:netFields });
         const abuseFields = [
-          { key:'ab-score', label:'Confidence Score', present:d.abuseConfidenceScore!=null },
-          { key:'ab-meter', label:'Score Meter', present:d.abuseConfidenceScore!=null },
-          { key:'ab-reports', label:'Total Reports', present:d.totalReports!=null },
-          { key:'ab-lastreport', label:'Last Reported', present:!!d.lastReportedAt },
+          { key:'ab-score', label:'Confidence Score', present:d.abuseipdb?.confidenceScore!=null },
+          { key:'ab-meter', label:'Score Meter', present:d.abuseipdb?.confidenceScore!=null },
+          { key:'ab-reports', label:'Total Reports', present:d.abuseipdb?.totalReports!=null },
+          { key:'ab-lastreport', label:'Last Reported', present:!!d.abuseipdb?.lastReportedAt },
         ].filter(f=>f.present);
         if (abuseFields.length) sections.push({ key:'abuse', icon:'🚨', label:'AbuseIPDB', fields:abuseFields });
         const vtFields = [
-          { key:'vt-malicious', label:'🔴 Malicious', present:d.vtMalicious!=null },
-          { key:'vt-suspicious', label:'🟡 Suspicious', present:d.vtSuspicious!=null },
-          { key:'vt-harmless', label:'🟢 Harmless', present:!!d['vtStats_S_U_H'] },
-          { key:'vt-undetected', label:'⬜ Undetected', present:!!d['vtStats_S_U_H'] },
-          { key:'vt-summary', label:'Summary S/U/H', present:!!d['vtStats_S_U_H'] },
+          { key:'vt-malicious', label:'🔴 Malicious', present:d.virustotal?.malicious!=null },
+          { key:'vt-suspicious', label:'🟡 Suspicious', present:d.virustotal?.suspicious!=null },
+          { key:'vt-harmless', label:'🟢 Harmless', present:d.virustotal!=null },
+          { key:'vt-undetected', label:'⬜ Undetected', present:d.virustotal!=null },
+          { key:'vt-summary', label:'Summary S/U/H', present:d.virustotal!=null },
         ].filter(f=>f.present);
         if (vtFields.length) sections.push({ key:'vt', icon:'🧪', label:'VirusTotal', fields:vtFields });
+        const linkFields = [
+          { key:'link-vt',    label:'VirusTotal Link',  present:!!d.links?.virustotal },
+          { key:'link-abuse', label:'AbuseIPDB Link',   present:!!d.links?.abuseipdb },
+          { key:'link-ipapi', label:'IPAPI Link',       present:!!d.links?.ipapi },
+        ].filter(f=>f.present);
+        if (linkFields.length) sections.push({ key:'links', icon:'🔗', label:'Links', fields:linkFields });
         sections.push({ key:'json', icon:'{ }', label:'Raw JSON', fields:[] });
         return sections;
       });
@@ -1090,20 +1218,59 @@
       });
 
       // ─── Helper: build hash dynamic columns ──────────────────────────────────
+      // With the vendor-grouped JSON structure, Object.keys(result) only returns
+      // top-level vendor keys (virustotal, malwarebazaar, threatfox).
+      // We use the static HASH_COL_ORDER as the authoritative column list instead.
       function buildHashDynCols(results) {
-        const allKeys = new Set();
+        // Check which keys actually have data across all results
+        const hasData = new Set();
         results.forEach(e => {
           const r = e.result || e;
-          if (r && typeof r === 'object') Object.keys(r).forEach(k => allKeys.add(k));
+          if (!r) return;
+          const vt = r.virustotal || {};
+          const mb = r.malwarebazaar || {};
+          // VT fields
+          if (vt.md5)                             hasData.add('md5');
+          if (vt.sha1)                            hasData.add('sha1');
+          if (vt.sha256)                          hasData.add('sha256');
+          if (vt.meaningfulName)                  hasData.add('meaningfulName');
+          if (vt.magic)                           hasData.add('magic');
+          if (vt.magika)                          hasData.add('magika');
+          if (vt.malicious != null)               hasData.add('vtMalicious');
+          if (vt.suspicious != null)              hasData.add('vtSuspicious');
+          if (vt.harmless != null)                hasData.add('vtHarmless');
+          if (vt.undetected != null)              hasData.add('vtUndetected');
+          if (vt.reputation != null)              hasData.add('vtReputation');
+          if (vt.suggestedThreatLabel)            hasData.add('suggestedThreatLabel');
+          if (vt.popularThreatCategories?.length) hasData.add('popularThreatCategories');
+          if (vt.popularThreatNames?.length)      hasData.add('popularThreatNames');
+          if (vt.sandboxMalwareClassifications?.length) hasData.add('sandboxMalwareClassifications');
+          if (vt.sigmaAnalysisSummary)            hasData.add('sigmaAnalysisSummary');
+          if (vt.signatureSigners)                hasData.add('signatureSigners');
+          if (vt.signerDetail)                    hasData.add('signerDetail');
+          // MB fields
+          if (mb.queryStatus)                     hasData.add('mbQueryStatus');
+          if (mb.signature)                       hasData.add('mbSignature');
+          if (mb.fileName)                        hasData.add('mbFileName');
+          if (mb.fileType)                        hasData.add('mbFileType');
+          if (mb.tags?.length)                    hasData.add('mbTags');
+          if (mb.comment)                         hasData.add('mbComment');
+          // Top-level
+          if (r.riskLevel)                        hasData.add('riskLevel');
+          if (r.hashType)                         hasData.add('hashType');
+          if (r.links?.virustotal)                hasData.add('link_virustotal');
+          if (r.links?.malwarebazaar)             hasData.add('link_malwarebazaar');
         });
-        const skip = new Set(['rawVT','rawMB','hash','_hash']);
-        const ordered = [
-          ...HASH_COL_ORDER.filter(k => allKeys.has(k) && !skip.has(k)),
-          ...[...allKeys].filter(k => !HASH_COL_ORDER.includes(k) && !skip.has(k)).sort(),
-        ];
+
+        const skip = new Set(['hash','_hash','threatfox','links']);
+        const ordered = HASH_COL_ORDER.filter(k => !skip.has(k));
+
         hashDynCols.splice(0, hashDynCols.length, ...ordered.map(key => {
           const prev = hashDynCols.find(c => c.key === key);
-          const visible = prev ? prev.visible : (hashColVisible[key] !== undefined ? hashColVisible[key] : !HASH_COL_HIDDEN_DEFAULT.has(key));
+          // Preserve user toggle; otherwise default visible only when data exists
+          // and not in the hidden-by-default set.
+          const defaultVisible = hasData.has(key) && !HASH_COL_HIDDEN_DEFAULT.has(key);
+          const visible = prev ? prev.visible : (hashColVisible[key] !== undefined ? hashColVisible[key] : defaultVisible);
           return { key, label: HASH_COL_LABELS[key] || key, visible };
         }));
       }
@@ -1156,7 +1323,7 @@
         try {
           const res = await fetch('/api/scan', {
             method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({ ip, mode:scanMode.value, vt_key:keys.vt, abuse_key:keys.abuse, ipapi_key:keys.ipapi, use_cache:ipUseCache.value }),
+            body: JSON.stringify({ ip, mode:scanMode.value, vt_key:keys.vt, abuse_key:keys.abuse, ipapi_key:keys.ipapi, abusech_key:keys.abusech, use_cache:ipUseCache.value }),
           });
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
@@ -1182,7 +1349,7 @@
         try {
           const resp = await fetch('/api/scan/hash', {
             method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({ hashes, vt_key:keys.vt, mb_key:keys.mb, use_cache:hashUseCache.value }),
+            body: JSON.stringify({ hashes, vt_key:keys.vt, abusech_key:keys.abusech, use_cache:hashUseCache.value }),
           });
           if (!resp.ok) { const t = await resp.text(); throw new Error(t || resp.statusText); }
           const data = await resp.json();
@@ -1191,7 +1358,7 @@
           buildHashDynCols(data);
           data.forEach(e => {
             const r = e.result||e;
-            addHist(e.hash||r.sha256||r.md5||'?', r.riskLevel||(e.error?'ERROR':'UNKNOWN'));
+            addHist(e.hash||r.virustotal?.sha256||r.virustotal?.md5||'?', r.riskLevel||(e.error?'ERROR':'UNKNOWN'));
           });
         } catch(err) {
           hashError.value = 'Hash scan error: ' + err.message;
@@ -1240,9 +1407,9 @@
         return {};
       });
 
-      // signerDetail can be an object {certIssuer, name, status, validFrom, validTo} or a plain string
+      // signerDetail is now under virustotal.signerDetail
       const signerDetailObj = computed(() => {
-        const d = activeHashResult.value?.signerDetail;
+        const d = activeHashResult.value?.virustotal?.signerDetail;
         if (!d || typeof d !== 'object') return null;
         return d;
       });
@@ -1255,19 +1422,15 @@
         return s.length > 0 && !signerIsRevoked.value;
       });
 
-      // VT "not found" detection:
-      // Backend returns all-zero VT counts with no file metadata when VT has no record.
-      // A hash that is truly clean AND scanned by VT will have vtUndetected > 0.
-      // A not-found hash has vtUndetected === 0 AND vtMalicious === 0 AND no meaningfulName.
+      // VT "not found" detection — checks virustotal sub-object.
       const vtNotFound = computed(() => {
         const r = activeHashResult.value;
         if (!r) return false;
-        // If VT fields are not present at all, not found
-        if (r.vtMalicious == null && r.vtUndetected == null) return true;
-        // All detection counts are exactly 0 and no file metadata — VT returned NotFoundError
-        const allZero = (r.vtMalicious === 0 && r.vtSuspicious === 0 &&
-                r.vtHarmless  === 0 && r.vtUndetected === 0);
-        const noMeta = !r.meaningfulName && !r.magic && !r.magika && !r.suggestedThreatLabel;
+        const vt = r.virustotal;
+        if (!vt) return true;
+        const allZero = (vt.malicious === 0 && vt.suspicious === 0 &&
+                vt.harmless  === 0 && vt.undetected === 0);
+        const noMeta = !vt.meaningfulName && !vt.magic && !vt.magika && !vt.suggestedThreatLabel;
         return allZero && noMeta;
       });
 
@@ -1275,23 +1438,25 @@
       const networkRows = computed(() => {
         const d = activeResult.value;
         if (!d) return [];
+        const g = d.geo || {};
         return [
           ['IP',         d.ipAddress||d.ip,                              'net-ip'],
-          ['ISP',        d.isp||d.asn_org||'—',                         'net-isp'],
-          ['Country',    d.country||d.countryCode||'—',                  'net-country'],
-          ['City',       d.city||'—',                                    'net-city'],
-          ['Timezone',   d.timezone||'—',                                'net-tz'],
-          ['Public',     d.isPublic!=null ? yn(d.isPublic) : '—',       'net-public'],
-          ['Whitelisted',d.isWhitelisted!=null ? yn(d.isWhitelisted):'—','net-wl'],
-          ['Hostnames',  (d.hostnames&&d.hostnames.length)?d.hostnames.join(', '):'—','net-hostnames'],
+          ['ISP',        g.isp||g.asn_org||'—',                         'net-isp'],
+          ['Country',    g.country||g.countryCode||'—',                  'net-country'],
+          ['City',       g.city||'—',                                    'net-city'],
+          ['Timezone',   g.timezone||'—',                                'net-tz'],
+          ['Public',     g.isPublic!=null ? yn(g.isPublic) : '—',       'net-public'],
+          ['Whitelisted',g.isWhitelisted!=null ? yn(g.isWhitelisted):'—','net-wl'],
+          ['Hostnames',  (g.hostnames&&g.hostnames.length)?g.hostnames.join(', '):'—','net-hostnames'],
         ].filter(([,v])=>v&&v!=='—');
       });
 
-      // ─── VT stat helper ───────────────────────────────────────────────────────
+      // ─── VT stat helper (IP mode summary S/U/H) ───────────────────────────────
       function vtStatPart(idx) {
         const d = activeResult.value;
-        if (!d || !d['vtStats_S_U_H']) return '—';
-        return d['vtStats_S_U_H'].split('/')[idx] ?? '—';
+        if (!d || !d.virustotal) return '—';
+        const vt = d.virustotal;
+        return [vt.suspicious ?? 0, vt.undetected ?? 0, vt.harmless ?? 0][idx] ?? '—';
       }
 
       // ─── Tab switching ────────────────────────────────────────────────────────
@@ -1348,21 +1513,23 @@
         { key:'#',                    label:'#',             vis:null,               get:(d,i)=>i+1 },
         { key:'ipAddress',            label:'IP Address',    vis:null,               get:d=>d.ipAddress||d.ip||'—' },
         { key:'riskLevel',            label:'Risk',          vis:'risk',             get:d=>d.riskLevel||'—' },
-        { key:'isp',                  label:'ISP',           vis:'field:net-isp',    get:d=>d.isp||'—' },
-        { key:'country',              label:'Country',       vis:'field:net-country',get:d=>d.country||d.countryCode||'—' },
-        { key:'city',                 label:'City',          vis:'field:net-city',   get:d=>d.city||'—' },
-        { key:'timezone',             label:'Timezone',      vis:'field:net-tz',     get:d=>d.timezone||'—' },
-        { key:'isPublic',             label:'Public',        vis:'field:net-public', get:d=>d.isPublic },
-        { key:'isWhitelisted',        label:'Whitelisted',   vis:'field:net-wl',     get:d=>d.isWhitelisted },
-        { key:'hostnames',            label:'Hostnames',     vis:'field:net-hostnames',get:d=>d.hostnames||[] },
-        { key:'abuseConfidenceScore', label:'Abuse %',       vis:'field:ab-score',   get:d=>d.abuseConfidenceScore??'—' },
-        { key:'totalReports',         label:'Reports',       vis:'field:ab-reports', get:d=>d.totalReports??'—' },
-        { key:'lastReportedAt',       label:'Last Reported', vis:'field:ab-lastreport',get:d=>d.lastReportedAt?d.lastReportedAt.replace('T',' ').replace('+00:00',''):'—' },
-        { key:'vtStats_S_U_H',        label:'VT S/U/H',      vis:'field:vt-summary', get:d=>d['vtStats_S_U_H']||'—' },
-        { key:'vtMalicious',          label:'VT Malicious',  vis:'field:vt-malicious',get:d=>d.vtMalicious??'—' },
-        { key:'vtSuspicious',         label:'VT Suspicious', vis:'field:vt-suspicious',get:d=>d.vtSuspicious??'—' },
-        { key:'vtReputation',         label:'VT Reputation', vis:'vt',               get:d=>d.vtReputation??'—' },
-        { key:'_link_ip',             label:'Links',         vis:null,               get:d=>d.ipAddress||d.ip||'' },
+        { key:'isp',                  label:'ISP',           vis:'field:net-isp',    get:d=>d.geo?.isp||'—' },
+        { key:'country',              label:'Country',       vis:'field:net-country',get:d=>d.geo?.country||d.geo?.countryCode||'—' },
+        { key:'city',                 label:'City',          vis:'field:net-city',   get:d=>d.geo?.city||'—' },
+        { key:'timezone',             label:'Timezone',      vis:'field:net-tz',     get:d=>d.geo?.timezone||'—' },
+        { key:'isPublic',             label:'Public',        vis:'field:net-public', get:d=>d.geo?.isPublic },
+        { key:'isWhitelisted',        label:'Whitelisted',   vis:'field:net-wl',     get:d=>d.geo?.isWhitelisted },
+        { key:'hostnames',            label:'Hostnames',     vis:'field:net-hostnames',get:d=>d.geo?.hostnames||[] },
+        { key:'abuseConfidenceScore', label:'Abuse %',       vis:'field:ab-score',   get:d=>d.abuseipdb?.confidenceScore??'—' },
+        { key:'totalReports',         label:'Reports',       vis:'field:ab-reports', get:d=>d.abuseipdb?.totalReports??'—' },
+        { key:'lastReportedAt',       label:'Last Reported', vis:'field:ab-lastreport',get:d=>d.abuseipdb?.lastReportedAt?d.abuseipdb.lastReportedAt.replace('T',' ').replace('+00:00',''):'—' },
+        { key:'vtStats_S_U_H',        label:'VT S/U/H',      vis:'field:vt-summary', get:d=>d.virustotal?`${d.virustotal.suspicious}/${d.virustotal.undetected}/${d.virustotal.harmless}`:'—' },
+        { key:'vtMalicious',          label:'VT Malicious',  vis:'field:vt-malicious',get:d=>d.virustotal?.malicious??'—' },
+        { key:'vtSuspicious',         label:'VT Suspicious', vis:'field:vt-suspicious',get:d=>d.virustotal?.suspicious??'—' },
+        { key:'vtReputation',         label:'VT Reputation', vis:'vt',               get:d=>d.virustotal?.reputation??'—' },
+        { key:'link_virustotal', label:'VT Link',      vis:'field:link-vt',    get:d=>d.links?.virustotal||'' },
+        { key:'link_abuseipdb',  label:'AbuseIPDB Link',vis:'field:link-abuse', get:d=>d.links?.abuseipdb||'' },
+        { key:'link_ipapi',      label:'IPAPI Link',    vis:'field:link-ipapi', get:d=>d.links?.ipapi||'' },
       ];
 
       function isColVisible(col) {
@@ -1372,7 +1539,7 @@
       }
 
       const visibleTableCols = computed(() =>
-              TABLE_COLS.filter(c => c.key !== '_link_ab' && c.key !== '_link_vt' && isColVisible(c))
+              TABLE_COLS.filter(c => isColVisible(c))
       );
 
       const sortedTableRows = computed(() => {
@@ -1401,6 +1568,7 @@
           return `<span class="t-risk risk-${risk}">${risk}</span>`;
         }
         if (col.key==='isPublic'||col.key==='isWhitelisted') {
+          if (val==null) return `<span class="t-na">—</span>`;
           return val ? `<span class="t-bool-yes">✓ Yes</span>` : `<span class="t-bool-no">✗ No</span>`;
         }
         if (col.key==='hostnames') {
@@ -1418,10 +1586,17 @@
           const c=val>0?'#34d399':val<0?'#f87171':'#4d6480';
           return `<span style="color:${c}">${val}</span>`;
         }
-        if (col.key==='_link_ip') {
-          const ip=row.ipAddress||row.ip||'';
-          if (!ip) return `<span class="t-na">—</span>`;
-          return `<span class="t-links"><a href="https://api.ipapi.is/?q=${ip}" target="_blank" rel="noopener" class="t-link ip">IPAPI</a><a href="https://www.abuseipdb.com/check/${ip}" target="_blank" rel="noopener" class="t-link ab">AbuseIPDB</a><a href="https://www.virustotal.com/gui/ip-address/${ip}" target="_blank" rel="noopener" class="t-link vt">VirusTotal</a></span>`;
+        if (col.key==='link_virustotal') {
+          if (!val) return `<span class="t-na">—</span>`;
+          return `<a href="${val}" target="_blank" rel="noopener" class="tbl-link-chip">↗ VT</a>`;
+        }
+        if (col.key==='link_abuseipdb') {
+          if (!val) return `<span class="t-na">—</span>`;
+          return `<a href="${val}" target="_blank" rel="noopener" class="tbl-link-chip ab">↗ AbuseIPDB</a>`;
+        }
+        if (col.key==='link_ipapi') {
+          if (!val) return `<span class="t-na">—</span>`;
+          return `<a href="${val}" target="_blank" rel="noopener" class="tbl-link-chip ip">↗ IPAPI</a>`;
         }
         if (val==='—'||val==null) return `<span class="t-na">—</span>`;
         return String(val);
@@ -1450,15 +1625,63 @@
 
       function getHashCellVal(d, key) {
         if (key==='#') return d._idx;
-        if (key==='hash') return d._hash||d.sha256||d.sha1||d.md5||'';
+        if (key==='hash') return d._hash||d.virustotal?.sha256||d.virustotal?.sha1||d.virustotal?.md5||'';
+
+        // Top-level fields
+        if (key==='riskLevel') return d.riskLevel||'—';
+        if (key==='hashType')  return d.hashType||'—';
+        if (key==='link_virustotal')    return d.links?.virustotal    || '—';
+        if (key==='link_malwarebazaar') return d.links?.malwarebazaar || '—';
+
+        // ── VT fields: column keys use old flat names, read from virustotal.* ──
+        const vtMap = {
+          vtMalicious:  'malicious',
+          vtSuspicious: 'suspicious',
+          vtHarmless:   'harmless',
+          vtUndetected: 'undetected',
+          vtReputation: 'reputation',
+          // identity / metadata keys kept as-is in both old and new
+          meaningfulName:                'meaningfulName',
+          magic:                         'magic',
+          magika:                        'magika',
+          md5:                           'md5',
+          sha1:                          'sha1',
+          sha256:                        'sha256',
+          suggestedThreatLabel:          'suggestedThreatLabel',
+          popularThreatCategories:       'popularThreatCategories',
+          popularThreatNames:            'popularThreatNames',
+          sandboxMalwareClassifications: 'sandboxMalwareClassifications',
+          sigmaAnalysisSummary:          'sigmaAnalysisSummary',
+          signatureSigners:              'signatureSigners',
+          signerDetail:                  'signerDetail',
+        };
+        if (key in vtMap) {
+          const v = d.virustotal?.[vtMap[key]];
+          if (v==null) return '—';
+          if (Array.isArray(v)) return v.join(', ')||'—';
+          if (typeof v==='object') return JSON.stringify(v);
+          return String(v);
+        }
+
+        // ── MB fields: column keys use old flat names, read from malwarebazaar.* ──
+        const mbMap = {
+          mbQueryStatus: 'queryStatus',
+          mbFileName:    'fileName',
+          mbFileType:    'fileType',
+          mbSignature:   'signature',
+          mbTags:        'tags',
+          mbComment:     'comment',
+        };
+        if (key in mbMap) {
+          const v = d.malwarebazaar?.[mbMap[key]];
+          if (v==null) return '—';
+          if (Array.isArray(v)) return v.join(', ')||'—';
+          return String(v);
+        }
+
+        // Fallback for any unexpected key
         const v = d[key];
         if (v==null) return '—';
-        if (key==='links'&&typeof v==='object') {
-          const p=[];
-          if(v.virustotal) p.push('VT: '+v.virustotal);
-          if(v.malwarebazaar) p.push('MB: '+v.malwarebazaar);
-          return p.join(' | ')||'—';
-        }
         if (Array.isArray(v)) return v.join(', ')||'—';
         if (typeof v==='object') return JSON.stringify(v);
         return String(v);
@@ -1467,7 +1690,7 @@
       function renderHashTableCell(col, row) {
         if (col.key==='#') return String(row._idx+1);
         if (col.key==='hash') {
-          const h=row._hash||row.sha256||row.sha1||row.md5||'?';
+          const h=row._hash||row.virustotal?.sha256||row.virustotal?.sha1||row.virustotal?.md5||'?';
           return `<span style="font-size:0.65rem">${h.slice(0,16)}…</span>`;
         }
         if (col.key==='riskLevel') {
@@ -1475,31 +1698,40 @@
           return `<span class="t-risk risk-${r}">${r}</span>`;
         }
         if (col.key==='mbQueryStatus') {
-          const raw=row.mbQueryStatus;
+          const raw=row.malwarebazaar?.queryStatus;
           const color=raw==='ok'?'#34d399':raw==='hash_not_found'?'#4d6480':'#94a3b8';
           const label=raw==='ok'?'Found':raw==='hash_not_found'?'Not found':raw||'—';
           return `<span style="color:${color};font-weight:${raw==='ok'?700:400}">${label}</span>`;
         }
-        // links: render as clickable VT / MB chips (UI only — export uses raw value)
-        if (col.key==='links') {
-          const links = row.links;
-          if (!links || typeof links !== 'object') return `<span class="t-na">—</span>`;
-          const vtAllZero = row.vtMalicious===0 && row.vtSuspicious===0 && row.vtHarmless===0 && row.vtUndetected===0 && !row.meaningfulName;
-          const mbNotFound = row.mbQueryStatus && row.mbQueryStatus !== 'ok';
-          const vtChip = links.virustotal
-                  ? (vtAllZero
-                          ? `<span class="tbl-link-na" title="Not found in VirusTotal">✗ VT</span>`
-                          : `<a href="${links.virustotal}" target="_blank" rel="noopener" class="tbl-link-chip">↗ VT</a>`)
-                  : '';
-          const mbChip = links.malwarebazaar
-                  ? (mbNotFound
-                          ? `<span class="tbl-link-na" title="Not found in MalwareBazaar">✗ MB</span>`
-                          : `<a href="${links.malwarebazaar}" target="_blank" rel="noopener" class="tbl-link-chip">↗ MB</a>`)
-                  : '';
-          return `<div style="display:flex;gap:4px;align-items:center">${vtChip}${mbChip}</div>`;
+        // Per-vendor link chips (separate columns)
+        if (col.key==='link_virustotal') {
+          const url = row.links?.virustotal;
+          if (!url) return `<span class="t-na">—</span>`;
+          const vt = row.virustotal || {};
+          const notFound = vt.malicious===0 && vt.suspicious===0 && vt.harmless===0 && vt.undetected===0 && !vt.meaningfulName;
+          return notFound
+                  ? `<span class="tbl-link-na" title="Not found in VirusTotal">✗ VT</span>`
+                  : `<a href="${url}" target="_blank" rel="noopener" class="tbl-link-chip">↗ VT</a>`;
+        }
+        if (col.key==='link_malwarebazaar') {
+          const url = row.links?.malwarebazaar;
+          if (!url) return `<span class="t-na">—</span>`;
+          const notFound = row.malwarebazaar?.queryStatus && row.malwarebazaar.queryStatus !== 'ok';
+          return notFound
+                  ? `<span class="tbl-link-na" title="Not found in MalwareBazaar">✗ MB</span>`
+                  : `<a href="${url}" target="_blank" rel="noopener" class="tbl-link-chip ab">↗ MB</a>`;
         }
         const val=getHashCellVal(row,col.key);
         if (val==='—') return `<span class="t-na">—</span>`;
+        // Coloured cells for key VT columns
+        if (col.key==='vtMalicious'&&typeof val==='string'&&val!=='—') {
+          const n=parseInt(val); const c=n>=5?'#f87171':n>=1?'#fb923c':'#34d399';
+          return `<span style="color:${c};font-weight:600">${val}</span>`;
+        }
+        if (col.key==='vtReputation'&&typeof val==='string'&&val!=='—') {
+          const n=parseInt(val); const c=n>0?'#34d399':n<0?'#f87171':'#4d6480';
+          return `<span style="color:${c}">${val}</span>`;
+        }
         const display=val.length>60?val.slice(0,58)+'…':val;
         return `<span title="${val.replace(/"/g,'&quot;')}">${display}</span>`;
       }
@@ -1518,24 +1750,15 @@
         if (!rows.length) return;
         let text = '';
         if (format === 'json') {
-          // respect visible columns
-          const cols = hashDynCols.filter(c => c.visible);
-          const data = rows.map(row => {
-            const obj = {}; cols.forEach(c => { let v = getHashCellVal(row, c.key); if (v === '—') v = null; obj[c.key] = v; }); return obj;
-          });
-          text = JSON.stringify(data, null, 2);
+          text = JSON.stringify(rows.map(buildHashExportRow), null, 2);
         } else if (format === 'csv') {
-          const cols = hashDynCols.filter(c => c.visible);
-          const header = cols.map(c => c.label).join(',');
-          const lines = rows.map(row => cols.map(c => {
-            let v = getHashCellVal(row, c.key);
-            if (Array.isArray(v)) v = v.join('; ');
-            if (v == null || v === '—') v = '';
-            return '"' + String(v).replace(/"/g, '""') + '"';
-          }).join(','));
+          const { header, lines } = buildHashCSV(rows);
           text = [header, ...lines].join('\n');
         } else if (format === 'hashes') {
-          text = rows.map(r => r.sha256 || r.sha1 || r.md5 || r.hash).filter(Boolean).join('\n');
+          // Bug 3 fix: read from virustotal sub-object, not flat fields
+          text = rows.map(r =>
+                  r.virustotal?.sha256 || r.virustotal?.sha1 || r.virustotal?.md5 || r._hash || r.hash
+          ).filter(Boolean).join('\n');
         }
         try {
           await navigator.clipboard.writeText(text);
@@ -1547,6 +1770,34 @@
           ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
         }
       }
+
+      // Shared helper: build one flat export object from a hash result row.
+      function buildHashExportRow(row) {
+        const cols = hashDynCols.filter(c => c.visible);
+        const obj = {};
+        cols.forEach(c => {
+          let v = getHashCellVal(row, c.key);
+          if (v === '—') v = null;
+          // Use clean export key names for link columns
+          const exportKey = c.key === 'link_virustotal'    ? 'virustotal_link'
+                  : c.key === 'link_malwarebazaar' ? 'malwarebazaar_link'
+                          : c.key;
+          obj[exportKey] = v;
+        });
+        return obj;
+      }
+
+      // Shared helper: build CSV header + lines for hash results.
+      function buildHashCSV(rows) {
+        const cols = hashDynCols.filter(c => c.visible);
+        const header = cols.map(c => c.label).join(',');
+        const lines = rows.map(row => cols.map(c => {
+          let v = getHashCellVal(row, c.key);
+          if (v == null || v === '—') v = '';
+          return '"' + String(v).replace(/"/g, '""') + '"';
+        }).join(','));
+        return { header, lines };
+      }
       async function copyClipboard(format) {
         copyMenuOpen.value = false;
         const rows = allResults.value.filter(e=>e.result).map(e=>e.result);
@@ -1555,15 +1806,16 @@
         if (format==='json') {
           text = JSON.stringify(buildFilteredRows(), null, 2);
         } else if (format==='csv') {
-          const cols = TABLE_COLS.filter(c=>c.key!=='#'&&isColVisible(c));
-          const header = cols.map(c=>c.label).join(',');
-          const lines = rows.map(row=>cols.map(c=>{
-            let v=c.get(row); if(Array.isArray(v)) v=v.join('; ');
-            if(typeof v==='boolean') v=v?'true':'false';
-            if(v==null) v='';
-            return '"'+String(v).replace(/"/g,'""')+'"';
+          const cols = TABLE_COLS.filter(c => c.key !== '#' && isColVisible(c));
+          const header = cols.map(c => c.label).join(',');
+          const lines = rows.map(row => cols.map(c => {
+            let v = c.get(row);
+            if (Array.isArray(v)) v = v.join('; ');
+            if (typeof v === 'boolean') v = v ? 'true' : 'false';
+            if (v == null || v === '—') v = '';
+            return '"' + String(v).replace(/"/g, '""') + '"';
           }).join(','));
-          text = [header,...lines].join('\n');
+          text = [header, ...lines].join('\n');
         } else if (format==='ips') {
           text = rows.map(r=>r.ipAddress||r.ip).filter(Boolean).join('\n');
         }
@@ -1577,24 +1829,38 @@
       }
 
       function buildFilteredRows() {
-        const cols = TABLE_COLS.filter(c=>c.key!=='#'&&isColVisible(c));
-        return allResults.value.filter(e=>e.result).map((e,i)=>{
-          const obj={}; cols.forEach(c=>{ let v=c.get(e.result,i); if(v==='—') v=null; obj[c.key]=v; }); return obj;
+        const cols = TABLE_COLS.filter(c => c.key !== '#' && isColVisible(c));
+        return allResults.value.filter(e => e.result).map((e, i) => {
+          const obj = {};
+          cols.forEach(c => {
+            let v = c.get(e.result, i);
+            if (v === '—') v = null;
+            if (typeof v === 'boolean') v = v ? true : false;
+            if (Array.isArray(v)) v = v.join('; ');
+            // Rename link columns to cleaner export keys
+            const exportKey = c.key === 'link_virustotal' ? 'virustotal_link'
+                    : c.key === 'link_abuseipdb'  ? 'abuseipdb_link'
+                            : c.key === 'link_ipapi'       ? 'ipapi_link'
+                                    : c.key;
+            obj[exportKey] = v || null;
+          });
+          return obj;
         });
       }
 
       function exportCSV() {
-        const rows=allResults.value.filter(e=>e.result).map(e=>e.result);
-        if(!rows.length) return;
-        const cols=TABLE_COLS.filter(c=>c.key!=='#'&&isColVisible(c));
-        const header=cols.map(c=>c.label).join(',');
-        const lines=rows.map(row=>cols.map(c=>{
-          let v=c.get(row); if(Array.isArray(v)) v=v.join('; ');
-          if(typeof v==='boolean') v=v?'true':'false';
-          if(v==null||v==='—') v='';
-          return '"'+String(v).replace(/"/g,'""')+'"';
+        const rows = allResults.value.filter(e => e.result).map(e => e.result);
+        if (!rows.length) return;
+        const cols = TABLE_COLS.filter(c => c.key !== '#' && isColVisible(c));
+        const header = cols.map(c => c.label).join(',');
+        const lines = rows.map(row => cols.map(c => {
+          let v = c.get(row);
+          if (Array.isArray(v)) v = v.join('; ');
+          if (typeof v === 'boolean') v = v ? 'true' : 'false';
+          if (v == null || v === '—') v = '';
+          return '"' + String(v).replace(/"/g, '""') + '"';
         }).join(','));
-        download([header,...lines].join('\n'),'iocscan_results.csv','text/csv');
+        download([header, ...lines].join('\n'), 'iocscan_results.csv', 'text/csv');
       }
 
       function exportJSON() {
@@ -1604,24 +1870,16 @@
       }
 
       function exportHashCSV() {
-        const rows=allHashResults.value.filter(e=>e.result).map(e=>e.result||e);
-        if(!rows.length) return;
-        const cols=hashDynCols.filter(c=>c.visible);
-        const header=cols.map(c=>c.label).join(',');
-        const lines=rows.map(row=>cols.map(c=>{
-          let v=getHashCellVal(row,c.key); if(v==null||v==='—') v='';
-          return '"'+String(v).replace(/"/g,'""')+'"';
-        }).join(','));
-        download([header,...lines].join('\n'),'iocscan_hash_results.csv','text/csv');
+        const rows = allHashResults.value.filter(e => e.result).map(e => e.result || e);
+        if (!rows.length) return;
+        const { header, lines } = buildHashCSV(rows);
+        download([header, ...lines].join('\n'), 'iocscan_hash_results.csv', 'text/csv');
       }
 
       function exportHashJSON() {
-        const cols=hashDynCols.filter(c=>c.visible);
-        const data=allHashResults.value.filter(e=>e.result).map(e=>{
-          const obj={}; cols.forEach(c=>{ let v=getHashCellVal(e.result||e,c.key); if(v==='—') v=null; obj[c.key]=v; }); return obj;
-        });
-        if(!data.length) return;
-        download(JSON.stringify(data,null,2),'iocscan_hash_results.json','application/json');
+        const rows = allHashResults.value.filter(e => e.result).map(e => e.result || e);
+        if (!rows.length) return;
+        download(JSON.stringify(rows.map(buildHashExportRow), null, 2), 'iocscan_hash_results.json', 'application/json');
       }
 
       function download(content, filename, type) {

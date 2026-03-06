@@ -32,7 +32,7 @@ var ipsCmd = &cobra.Command{
 			return err
 		}
 
-		processor := utils.NewIPProcessor(apis.VTAPI, apis.AbuseAPI, apis.IPapiAPI)
+		processor := utils.NewIPProcessor(apis.VTAPI, apis.AbuseAPI, apis.IPapiAPI, apis.AbuseCHAPI)
 
 		fmt.Println("[")
 		for i, ip := range ips {

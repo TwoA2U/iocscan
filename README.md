@@ -176,7 +176,7 @@ Global Flags:
   -v, --VT_API      VirusTotal API key
   -a, --Abuse_API   AbuseIPDB API key
   -i, --IPapi_API   ipapi.is API key (optional)
-  -m, --MB_API      MalwareBazaar Auth-Key (optional)
+  -b, --AbuseCH     AbuseCH Auth-Key (optional)
   -c, --config      Config file path (default: ~/.iocscan.yaml)
   -h, --help        Help
 ```
@@ -214,32 +214,54 @@ All CLI commands output a JSON array. Each element contains the queried indicato
 
 ```json
 [
-  {
-    "ip": "1.2.3.4",
-    "result": {
-      "ipAddress": "1.2.3.4",
-      "isp": "Example ISP Ltd",
-      "country": "United States",
-      "countryCode": "US",
-      "city": "San Jose",
-      "state": "California",
-      "timezone": "America/Los_Angeles",
-      "isPublic": true,
-      "isWhitelisted": false,
-      "abuseConfidenceScore": 87,
-      "totalReports": 142,
-      "lastReportedAt": "2024-11-20T14:33:00+00:00",
-      "vtMalicious": 4,
-      "vtSuspicious": 1,
-      "vtReputation": -12,
+   {
+      "ipAddress": "45.77.34.87",
       "riskLevel": "HIGH",
       "links": {
-        "ipapi": "https://api.ipapi.is/?q=1.2.3.4",
-        "abuseipdb": "https://www.abuseipdb.com/check/1.2.3.4",
-        "virustotal": "https://www.virustotal.com/gui/ip-address/1.2.3.4"
+         "ipapi": "https://api.ipapi.is/?q=45.77.34.87",
+         "abuseipdb": "https://www.abuseipdb.com/check/45.77.34.87",
+         "virustotal": "https://www.virustotal.com/gui/ip-address/45.77.34.87"
+      },
+      "geo": {
+         "isp": "Vultr Holdings, LLC",
+         "country": "Singapore",
+         "countryCode": "SG",
+         "city": "Singapore",
+         "state": "Singapore",
+         "timezone": "Asia/Singapore",
+         "isPublic": true,
+         "isWhitelisted": false,
+         "hostnames": [
+            "45.77.34.87.vultrusercontent.com"
+         ]
+      },
+      "virustotal": {
+         "malicious": 3,
+         "suspicious": 1,
+         "undetected": 36,
+         "harmless": 54,
+         "reputation": -11
+      },
+      "abuseipdb": {
+         "confidenceScore": 0,
+         "totalReports": 0
+      },
+      "threatfox": {
+         "queryStatus": "ok",
+         "threatType": "botnet_cc",
+         "malware": "win.adaptix_c2",
+         "confidenceLevel": 100,
+         "firstSeen": "2026-03-06 08:01:28 UTC",
+         "reporter": "DonPasci",
+         "tags": [
+            "AdaptixC2",
+            "AS-VULTR",
+            "AS20473",
+            "c2",
+            "censys"
+         ]
       }
-    }
-  }
+   }
 ]
 ```
 
@@ -247,54 +269,49 @@ All CLI commands output a JSON array. Each element contains the queried indicato
 
 ```json
 [
-  {
-    "hash": "d55f983c994caa160ec63a59f6b4250fe67fb3e8c43a388aec60a4a6978e9f1e",
-    "result": {
+   {
+      "hash": "2093c195b6c1fd6ab9e1110c13096c5fe130b75a84a27748007ae52d9e951643",
       "hashType": "SHA256",
       "riskLevel": "CRITICAL",
-      "md5": "561cffbaba71a6e8cc1cdceda990ead4",
-      "sha1": "5162f14d75e96edb914d1756349d6e11583db0b0",
-      "sha256": "d55f983c994caa160ec63a59f6b4250fe67fb3e8c43a388aec60a4a6978e9f1e",
-      "meaningfulName": "revil_dll.dll",
-      "magic": "PE32 executable (GUI) Intel 80386, for MS Windows",
-      "magika": "PEBIN",
-      "vtMalicious": 58,
-      "vtSuspicious": 0,
-      "vtHarmless": 0,
-      "vtUndetected": 10,
-      "vtReputation": -436,
-      "suggestedThreatLabel": "trojan.sodinokibi/revil",
-      "popularThreatNames": ["sodinokibi", "revil", "dangeroussig"],
-      "popularThreatCategories": ["trojan", "ransomware", "dropper"],
-      "sandboxMalwareClassifications": ["MALWARE", "RANSOM", "EVADER"],
-      "sigmaAnalysisSummary": {
-        "Sigma Integrated Rule Set (GitHub)": {
-          "critical": 1,
-          "high": 1,
-          "medium": 2,
-          "low": 0
-        }
-      },
-      "signatureSigners": "PB03 TRANSPORT LTD.; Sectigo RSA Code Signing CA",
-      "signerDetail": {
-        "certIssuer": "Sectigo RSA Code Signing CA",
-        "name": "PB03 TRANSPORT LTD.",
-        "status": "Trust for this certificate has been revoked.",
-        "validFrom": "12:00 AM 04/29/2021",
-        "validTo": "11:59 PM 04/29/2022"
-      },
-      "mbQueryStatus": "ok",
-      "mbSignature": "Sodinokibi",
-      "mbFileName": "revil.exe",
-      "mbFileType": "exe",
-      "mbTags": ["exe", "revil", "signed", "Sodinokibi"],
-      "mbComment": "Found from the Kaseya Reddit threat, speculated to impact 200+ orgs",
       "links": {
-        "virustotal": "https://www.virustotal.com/gui/file/d55f983c...",
-        "malwarebazaar": "https://bazaar.abuse.ch/sample/d55f983c..."
+         "virustotal": "https://www.virustotal.com/gui/file/2093c195b6c1fd6ab9e1110c13096c5fe130b75a84a27748007ae52d9e951643",
+         "malwarebazaar": "https://bazaar.abuse.ch/sample/2093c195b6c1fd6ab9e1110c13096c5fe130b75a84a27748007ae52d9e951643"
+      },
+      "virustotal": {
+         "md5": "95f0a946cd6881dd5953e6db4dfb0cb9",
+         "sha1": "d56cc8832fbf9af171359f34847588afbeb41249",
+         "sha256": "2093c195b6c1fd6ab9e1110c13096c5fe130b75a84a27748007ae52d9e951643",
+         "meaningfulName": "agent.crt",
+         "magic": "ASCII text, with very long lines (60285u)",
+         "magika": "CRT",
+         "malicious": 30,
+         "suspicious": 0,
+         "harmless": 0,
+         "undetected": 32,
+         "reputation": -47,
+         "suggestedThreatLabel": "trojan.sodinokibi/yabgc",
+         "popularThreatCategories": [
+            "trojan",
+            "ransomware"
+         ],
+         "popularThreatNames": [
+            "sodinokibi",
+            "yabgc"
+         ]
+      },
+      "malwarebazaar": {
+         "queryStatus": "ok",
+         "fileName": "agent (2).crt",
+         "fileType": "unknown",
+         "tags": [
+            "Ransomware",
+            "REvil"
+         ]
+      },
+      "threatfox": {
+         "queryStatus": "parse_error"
       }
-    }
-  }
+   }
 ]
 ```
 
@@ -339,21 +356,34 @@ Linux and Windows binaries are compressed with UPX. macOS binaries are left unco
 
 ```
 iocscan/
-├── main.go              — entry point
-├── cmd/                 — CLI subcommands
-│   ├── root.go          — API key management, config
-│   ├── ips.go           — ips subcommand (simple lookup)
-│   ├── ipc.go           — ipc subcommand (complex enrichment)
-│   └── web.go           — web subcommand (HTTP server + handlers)
-├── utils/               — enrichment logic
-│   ├── iputil.go        — IP lookup (ipapi.is, AbuseIPDB, VirusTotal)
-│   ├── hashutil.go      — hash lookup (VirusTotal, MalwareBazaar)
-│   ├── iocutil.go       — shared IOC helpers
-│   └── common.go        — config, SQLite cache, API key helpers
-├── ui/
-│   └── ui.go            — embeds web/index.html into the binary
+│
+├── main.go                 — entry point
+│
+├── cmd/                    — CLI subcommands
+│   ├── root.go             — API key management, config
+│   ├── ips.go              — ips subcommand (simple lookup)
+│   ├── ipc.go              — ipc subcommand (complex enrichment)
+│   └── web.go              — web subcommand (HTTP server + handlers)
+│
+├── integrations/           — threat intelligence integrations
+│   ├── abuseipdb.go        — AbuseIPDB integration
+│   ├── ipapi.go            — ipapi.is integration
+│   ├── malwarebazaar.go    — MalwareBazaar integration
+│   ├── threatfox.go        — ThreatFox integration
+│   └── virustotal.go       — VirusTotal integration
+│
+├── internal/
+│   └── httpclient/         — internal HTTP client wrapper
+│       └── http.go
+│
+├── utils/                  — enrichment logic
+│   ├── iputil.go           — IP lookup helpers
+│   ├── hashutil.go         — hash lookup helpers
+│   ├── iocutil.go          — shared IOC helpers
+│   └── common.go           — config, SQLite cache, API key helpers
+│
 └── web/
-    └── index.html       — Vue 3 single-page web UI
+    └── index.html          — Vue 3 single-page web UI
 ```
 
 ---
@@ -374,7 +404,7 @@ go mod tidy
 go build -o iocscan .
 
 # Save API keys
-./iocscan -v <VT_KEY> -a <ABUSE_KEY>
+./iocscan -v <VT_KEY> -a <ABUSE_KEY> -b <ABUSECH_KEY> -i <IPAPIIS_KEY>
 
 # Start the web UI
 ./iocscan web

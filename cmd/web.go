@@ -65,13 +65,13 @@ func serveUI(w http.ResponseWriter, r *http.Request) {
 
 // scanRequest is the JSON body accepted by POST /api/scan.
 type scanRequest struct {
-	IP       string `json:"ip"`
-	Mode     string `json:"mode"` // "simple" or "complex" (default: "complex")
-	VTKey    string `json:"vt_key"`
-	AbuseKey string `json:"abuse_key"`
-	IPApiKey string `json:"ipapi_key"`
-	MBKey    string `json:"mb_key"`
-	UseCache bool   `json:"use_cache"`
+	IP         string `json:"ip"`
+	Mode       string `json:"mode"` // "simple" or "complex" (default: "complex")
+	VTKey      string `json:"vt_key"`
+	AbuseKey   string `json:"abuse_key"`
+	IPApiKey   string `json:"ipapi_key"`
+	AbuseCHKey string `json:"abusech_key"` // Single key for MalwareBazaar + ThreatFox
+	UseCache   bool   `json:"use_cache"`
 }
 
 // serveScan runs IP enrichment for every IP in the request and returns a JSON array.
@@ -94,6 +94,7 @@ func serveScan(w http.ResponseWriter, r *http.Request) {
 		req.Mode = "complex"
 	}
 
+	// Fall back to saved config if keys were not provided in the request body.
 	if cfg, err := utils.GetAPI(cfgFile); err == nil {
 		if req.VTKey == "" {
 			req.VTKey = cfg.VTAPI
@@ -104,8 +105,8 @@ func serveScan(w http.ResponseWriter, r *http.Request) {
 		if req.IPApiKey == "" {
 			req.IPApiKey = cfg.IPapiAPI
 		}
-		if req.MBKey == "" {
-			req.MBKey = cfg.MBAPI
+		if req.AbuseCHKey == "" {
+			req.AbuseCHKey = cfg.AbuseCHAPI
 		}
 	}
 
@@ -115,7 +116,7 @@ func serveScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	processor := utils.NewIPProcessor(req.VTKey, req.AbuseKey, req.IPApiKey)
+	processor := utils.NewIPProcessor(req.VTKey, req.AbuseKey, req.IPApiKey, req.AbuseCHKey)
 
 	type entry struct {
 		IP     string          `json:"ip"`
@@ -128,6 +129,8 @@ func serveScan(w http.ResponseWriter, r *http.Request) {
 		results[i] = entry{IP: ip}
 	}
 
+	// Process in chunks of 10 concurrently, with a small pause between chunks
+	// to avoid hammering rate-limited APIs on bulk scans.
 	const chunkSize = 10
 	for start := 0; start < len(ips); start += chunkSize {
 		end := start + chunkSize
@@ -168,10 +171,10 @@ func serveHashScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Hashes   []string `json:"hashes"`
-		VTKey    string   `json:"vt_key"`
-		MBKey    string   `json:"mb_key"`
-		UseCache bool     `json:"use_cache"`
+		Hashes     []string `json:"hashes"`
+		VTKey      string   `json:"vt_key"`
+		AbuseCHKey string   `json:"abusech_key"` // Single key for MalwareBazaar + ThreatFox
+		UseCache   bool     `json:"use_cache"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
@@ -185,12 +188,13 @@ func serveHashScan(w http.ResponseWriter, r *http.Request) {
 		req.Hashes = req.Hashes[:100]
 	}
 
+	// Fall back to saved config
 	if cfg, err := utils.GetAPI(cfgFile); err == nil {
 		if req.VTKey == "" {
 			req.VTKey = cfg.VTAPI
 		}
-		if req.MBKey == "" {
-			req.MBKey = cfg.MBAPI
+		if req.AbuseCHKey == "" {
+			req.AbuseCHKey = cfg.AbuseCHAPI
 		}
 	}
 
@@ -205,7 +209,7 @@ func serveHashScan(w http.ResponseWriter, r *http.Request) {
 		results[i] = entry{Hash: h}
 	}
 
-	const chunkSize = 5
+	const chunkSize = 5 // VT free tier: 4 req/min — keep conservative
 	for start := 0; start < len(req.Hashes); start += chunkSize {
 		end := start + chunkSize
 		if end > len(req.Hashes) {
@@ -217,7 +221,7 @@ func serveHashScan(w http.ResponseWriter, r *http.Request) {
 			wg.Add(1)
 			go func(idx int, hash string) {
 				defer wg.Done()
-				raw, err := utils.LookupHash(hash, req.VTKey, req.MBKey, req.UseCache)
+				raw, err := utils.LookupHash(hash, req.VTKey, req.AbuseCHKey, req.UseCache)
 				if err != nil {
 					results[start+idx].Error = err.Error()
 					return
@@ -236,18 +240,18 @@ func serveHashScan(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(results)
 }
 
-// serveCacheClear handles POST /api/cache/clear.
+// serveCacheClear handles POST /api/cache/clear — wipes a specific cache table or all caches.
 func serveCacheClear(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	var req struct {
-		Table string `json:"table"` // "VT_HASH", "MB_HASH", or "all"
+		Table string `json:"table"` // "VT_HASH", "MB_HASH", "TF_HASH", "TF_IP", or "all"
 	}
 	json.NewDecoder(r.Body).Decode(&req)
 
-	tables := []string{"VT_HASH", "MB_HASH"}
+	tables := []string{"VT_HASH", "MB_HASH", "TF_HASH", "TF_IP"}
 	if req.Table != "" && req.Table != "all" {
 		tables = []string{req.Table}
 	}
