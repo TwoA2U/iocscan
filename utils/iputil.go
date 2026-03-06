@@ -1,5 +1,14 @@
 // utils/iputil.go — IP enrichment orchestrator.
 //
+// Coordinates concurrent enrichment of an IP address across all configured
+// threat-intelligence vendors and assembles the unified ComplexResult / IPSimple.
+//
+// Vendor-specific types and mapping logic live in the integrations/ package:
+//   integrations/virustotal.go  → IPVirusTotal, MapVTIPResult
+//   integrations/abuseipdb.go  → IPAbuseIPDB, MapAbuseIPResult
+//   integrations/threatfox.go  → TFIPResult (used directly, no extra mapping needed)
+//   integrations/ipapi.go      → IPAPIResponse (fields merged into IPGeo here)
+//
 // Public API (unchanged):
 //   NewIPProcessor(vtKey, abuseKey, ipapiKey, abusechKey) *IPProcessor
 //   (*IPProcessor).Lookup(ip, mode string, useCache bool) (string, error)
@@ -19,6 +28,7 @@ const maxIPs = 100
 
 // ── Output types ──────────────────────────────────────────────────────────────
 
+// IPLinks holds direct URLs to third-party pages for an IP address.
 type IPLinks struct {
 	IPAPI      string `json:"ipapi"`
 	AbuseIPDB  string `json:"abuseipdb"`
@@ -33,7 +43,8 @@ func newIPLinks(ip string) IPLinks {
 	}
 }
 
-// IPGeo holds geographic and network identity data (ipapi.is + AbuseIPDB).
+// IPGeo holds geographic and network identity data merged from ipapi.is + AbuseIPDB.
+// It is a cross-vendor composite type, so it lives in the orchestrator.
 type IPGeo struct {
 	ISP           string   `json:"isp,omitempty"`
 	Country       string   `json:"country,omitempty"`
@@ -44,22 +55,6 @@ type IPGeo struct {
 	IsPublic      bool     `json:"isPublic"`
 	IsWhitelisted bool     `json:"isWhitelisted"`
 	Hostnames     []string `json:"hostnames,omitempty"`
-}
-
-// IPVirusTotal holds VirusTotal enrichment for an IP.
-type IPVirusTotal struct {
-	Malicious  int `json:"malicious"`
-	Suspicious int `json:"suspicious"`
-	Undetected int `json:"undetected"`
-	Harmless   int `json:"harmless"`
-	Reputation int `json:"reputation"`
-}
-
-// IPAbuseIPDB holds AbuseIPDB enrichment for an IP.
-type IPAbuseIPDB struct {
-	ConfidenceScore int    `json:"confidenceScore"`
-	TotalReports    int    `json:"totalReports"`
-	LastReportedAt  string `json:"lastReportedAt,omitempty"`
 }
 
 // IPSimple is the output of a simple (ipapi.is-only) lookup.
@@ -76,19 +71,21 @@ type IPSimple struct {
 	Links       IPLinks `json:"links"`
 }
 
-// ComplexResult is the vendor-grouped output of a complex IP lookup.
+// ComplexResult is the vendor-grouped, unified output of a complex IP lookup.
+// Vendor-specific sub-structs (IPVirusTotal, IPAbuseIPDB) are defined in their
+// respective integrations/ files.
 type ComplexResult struct {
 	IPAddress string  `json:"ipAddress"`
 	RiskLevel string  `json:"riskLevel"`
 	Links     IPLinks `json:"links"`
 
-	Geo        IPGeo                    `json:"geo"`
-	VirusTotal IPVirusTotal             `json:"virustotal"`
-	AbuseIPDB  IPAbuseIPDB              `json:"abuseipdb"`
-	ThreatFox  *integrations.TFIPResult `json:"threatfox,omitempty"`
+	Geo        IPGeo                     `json:"geo"`
+	VirusTotal integrations.IPVirusTotal `json:"virustotal"`
+	AbuseIPDB  integrations.IPAbuseIPDB  `json:"abuseipdb"`
+	ThreatFox  *integrations.TFIPResult  `json:"threatfox,omitempty"`
 }
 
-// ── IPProcessor ──────────────────────────────────────────────────────────────
+// ── IPProcessor ───────────────────────────────────────────────────────────────
 
 type IPProcessor struct {
 	vtKey      string
@@ -101,6 +98,8 @@ func NewIPProcessor(vtKey, abuseKey, ipapiKey, abusechKey string) *IPProcessor {
 	return &IPProcessor{vtKey: vtKey, abuseKey: abuseKey, ipapiKey: ipapiKey, abusechKey: abusechKey}
 }
 
+// CheckIP parses and validates one or more IP addresses from a raw string.
+// IPs may be separated by newlines, commas, spaces, or tabs.
 func CheckIP(raw string) ([]string, error) {
 	parts := strings.FieldsFunc(raw, func(r rune) bool {
 		return r == '\r' || r == '\n' || r == ',' || r == ' ' || r == '\t'
@@ -156,6 +155,8 @@ func (p *IPProcessor) lookupSimple(ip string, useCache bool) (string, error) {
 	return string(j), nil
 }
 
+// ── Per-vendor channel types (internal to lookupComplex) ─────────────────────
+
 type abuseResult struct {
 	data *integrations.AbuseIPResult
 	err  error
@@ -179,6 +180,7 @@ func (p *IPProcessor) lookupComplex(ip string, useCache bool) (string, error) {
 	geoCh := make(chan geoResult, 1)
 	tfCh := make(chan tfIPRes, 1)
 
+	// ── AbuseIPDB ─────────────────────────────────────────────────────────────
 	go func() {
 		if useCache {
 			if cached := getCached(ip, "ABUSE_IP"); cached != "" {
@@ -198,6 +200,7 @@ func (p *IPProcessor) lookupComplex(ip string, useCache bool) (string, error) {
 		abuseCh <- abuseResult{data: d, err: err}
 	}()
 
+	// ── VirusTotal ────────────────────────────────────────────────────────────
 	go func() {
 		if useCache {
 			if cached := getCached(ip, "VT_IP"); cached != "" {
@@ -217,11 +220,13 @@ func (p *IPProcessor) lookupComplex(ip string, useCache bool) (string, error) {
 		vtCh <- vtIPResult{data: d, err: err}
 	}()
 
+	// ── ipapi.is ──────────────────────────────────────────────────────────────
 	go func() {
 		d, err := integrations.FetchIPAPI(ip, p.ipapiKey)
 		geoCh <- geoResult{data: d, err: err}
 	}()
 
+	// ── ThreatFox ─────────────────────────────────────────────────────────────
 	go func() {
 		if useCache {
 			if cached := getHashCached(ip, "TF_IP"); cached != "" {
@@ -258,22 +263,17 @@ func (p *IPProcessor) lookupComplex(ip string, useCache bool) (string, error) {
 		RiskLevel: assessRisk(ar.data.AbuseConfidenceScore, vr.data.Malicious),
 		Links:     newIPLinks(ip),
 		Geo: IPGeo{
-			ISP: ar.data.ISP, CountryCode: ar.data.CountryCode,
-			IsPublic: ar.data.IsPublic, IsWhitelisted: ar.data.IsWhitelisted,
-			Hostnames: ar.data.Hostnames,
+			ISP:           ar.data.ISP,
+			CountryCode:   ar.data.CountryCode,
+			IsPublic:      ar.data.IsPublic,
+			IsWhitelisted: ar.data.IsWhitelisted,
+			Hostnames:     ar.data.Hostnames,
 		},
-		VirusTotal: IPVirusTotal{
-			Malicious: vr.data.Malicious, Suspicious: vr.data.Suspicious,
-			Undetected: vr.data.Undetected, Harmless: vr.data.Harmless,
-			Reputation: vr.data.Reputation,
-		},
-		AbuseIPDB: IPAbuseIPDB{
-			ConfidenceScore: ar.data.AbuseConfidenceScore,
-			TotalReports:    ar.data.TotalReports,
-			LastReportedAt:  ar.data.LastReportedAt,
-		},
+		VirusTotal: integrations.MapVTIPResult(vr.data),
+		AbuseIPDB:  integrations.MapAbuseIPResult(ar.data),
 	}
 
+	// Merge ipapi.is geo fields — these supplement what AbuseIPDB already provides.
 	if gr.err == nil && gr.data != nil {
 		result.Geo.Country = gr.data.Location.Country
 		result.Geo.City = gr.data.Location.City
@@ -296,6 +296,8 @@ func (p *IPProcessor) lookupComplex(ip string, useCache bool) (string, error) {
 	}
 	return string(j), nil
 }
+
+// ── Risk assessment ───────────────────────────────────────────────────────────
 
 func assessRisk(abuseScore, vtMalicious int) string {
 	switch {

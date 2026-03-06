@@ -4,6 +4,13 @@
 //
 // Endpoint: GET https://api.abuseipdb.com/api/v2/check
 // Auth: Key header (required).
+//
+// This file owns:
+//   - Raw API response type (abuseAPIResponse)
+//   - Internal cleaned type (AbuseIPResult) used for caching
+//   - Output type (IPAbuseIPDB) surfaced in IP scan results
+//   - Fetch function (FetchAbuseIP)
+//   - Mapping function (MapAbuseIPResult)
 package integrations
 
 import (
@@ -15,6 +22,8 @@ import (
 )
 
 const abuseEndpoint = "https://api.abuseipdb.com/api/v2/check"
+
+// ── Raw API response type ─────────────────────────────────────────────────────
 
 // abuseAPIResponse is the raw envelope returned by AbuseIPDB.
 type abuseAPIResponse struct {
@@ -31,7 +40,10 @@ type abuseAPIResponse struct {
 	} `json:"data"`
 }
 
-// AbuseIPResult holds the cleaned AbuseIPDB enrichment for an IP address.
+// ── Cleaned types ─────────────────────────────────────────────────────────────
+
+// AbuseIPResult holds the full cleaned AbuseIPDB response, used for caching
+// and as the source for geo data merged into IPGeo by the orchestrator.
 type AbuseIPResult struct {
 	IPAddress            string   `json:"ipAddress"`
 	IsPublic             bool     `json:"isPublic"`
@@ -43,6 +55,15 @@ type AbuseIPResult struct {
 	TotalReports         int      `json:"totalReports"`
 	LastReportedAt       string   `json:"lastReportedAt"`
 }
+
+// IPAbuseIPDB holds the AbuseIPDB enrichment fields surfaced in an IP scan result.
+type IPAbuseIPDB struct {
+	ConfidenceScore int    `json:"confidenceScore"`
+	TotalReports    int    `json:"totalReports"`
+	LastReportedAt  string `json:"lastReportedAt,omitempty"`
+}
+
+// ── Fetch function ────────────────────────────────────────────────────────────
 
 // FetchAbuseIP queries AbuseIPDB for an IP address.
 func FetchAbuseIP(ip, apiKey string) (*AbuseIPResult, error) {
@@ -77,4 +98,16 @@ func FetchAbuseIP(ip, apiKey string) (*AbuseIPResult, error) {
 		TotalReports:         resp.Data.TotalReports,
 		LastReportedAt:       resp.Data.LastReportedAt,
 	}, nil
+}
+
+// ── Mapping function ──────────────────────────────────────────────────────────
+
+// MapAbuseIPResult converts an AbuseIPResult into the IPAbuseIPDB struct
+// used in IP scan output. Called by the IP enrichment orchestrator.
+func MapAbuseIPResult(r *AbuseIPResult) IPAbuseIPDB {
+	return IPAbuseIPDB{
+		ConfidenceScore: r.AbuseConfidenceScore,
+		TotalReports:    r.TotalReports,
+		LastReportedAt:  r.LastReportedAt,
+	}
 }

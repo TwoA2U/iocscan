@@ -1,5 +1,13 @@
 // utils/hashutil.go — Hash enrichment orchestrator.
 //
+// Coordinates concurrent enrichment of a file hash across all configured
+// threat-intelligence vendors and assembles the unified HashResult.
+//
+// Vendor-specific types and mapping logic live in the integrations/ package:
+//   integrations/virustotal.go   → HashVirusTotal, VTSignerDetail, SigmaSummaryEntry, MapVTHashResult
+//   integrations/malwarebazaar.go → HashMalwareBazaar, MapMBResult
+//   integrations/threatfox.go    → TFHashResult (used directly, no extra mapping needed)
+//
 // Public API (unchanged):
 //   LookupHash(hash, vtKey, abusechKey string, useCache bool) (string, error)
 package utils
@@ -13,24 +21,7 @@ import (
 	"github.com/TwoA2U/iocscan/integrations"
 )
 
-// ── Sub-structs for vendor-grouped output ─────────────────────────────────────
-
-// VTSignerDetail holds code-signing certificate detail.
-type VTSignerDetail struct {
-	CertIssuer string `json:"certIssuer,omitempty"`
-	Name       string `json:"name,omitempty"`
-	Status     string `json:"status,omitempty"`
-	ValidFrom  string `json:"validFrom,omitempty"`
-	ValidTo    string `json:"validTo,omitempty"`
-}
-
-// SigmaSummaryEntry holds sigma rule hit counts per ruleset.
-type SigmaSummaryEntry struct {
-	Critical int `json:"critical"`
-	High     int `json:"high"`
-	Medium   int `json:"medium"`
-	Low      int `json:"low"`
-}
+// ── Output types ──────────────────────────────────────────────────────────────
 
 // HashLinks holds direct URLs to third-party pages for a hash.
 type HashLinks struct {
@@ -38,62 +29,20 @@ type HashLinks struct {
 	MalwareBazaar string `json:"malwarebazaar"`
 }
 
-// HashVirusTotal holds all VirusTotal enrichment fields for a file hash.
-type HashVirusTotal struct {
-	// File identity
-	MD5            string `json:"md5,omitempty"`
-	SHA1           string `json:"sha1,omitempty"`
-	SHA256         string `json:"sha256,omitempty"`
-	MeaningfulName string `json:"meaningfulName,omitempty"`
-	Magic          string `json:"magic,omitempty"`
-	Magika         string `json:"magika,omitempty"`
-
-	// Detection stats
-	Malicious  int `json:"malicious"`
-	Suspicious int `json:"suspicious"`
-	Harmless   int `json:"harmless"`
-	Undetected int `json:"undetected"`
-	Reputation int `json:"reputation"`
-
-	// Threat classification
-	SuggestedThreatLabel    string   `json:"suggestedThreatLabel,omitempty"`
-	PopularThreatCategories []string `json:"popularThreatCategories,omitempty"`
-	PopularThreatNames      []string `json:"popularThreatNames,omitempty"`
-
-	// Sandbox
-	SandboxMalwareClassifications []string `json:"sandboxMalwareClassifications,omitempty"`
-
-	// Sigma
-	SigmaAnalysisSummary map[string]SigmaSummaryEntry `json:"sigmaAnalysisSummary,omitempty"`
-
-	// Code signing
-	SignatureSigners string          `json:"signatureSigners,omitempty"`
-	SignerDetail     *VTSignerDetail `json:"signerDetail,omitempty"`
-}
-
-// HashMalwareBazaar holds MalwareBazaar enrichment for a file hash.
-type HashMalwareBazaar struct {
-	QueryStatus string   `json:"queryStatus"`
-	FileName    string   `json:"fileName,omitempty"`
-	FileType    string   `json:"fileType,omitempty"`
-	Signature   string   `json:"signature,omitempty"`
-	Tags        []string `json:"tags,omitempty"`
-	Comment     string   `json:"comment,omitempty"`
-}
-
-// HashResult is the vendor-grouped output of a hash lookup.
+// HashResult is the vendor-grouped, unified output of a hash lookup.
+// Vendor-specific sub-structs are defined in their respective integrations/ files.
 type HashResult struct {
 	Hash      string    `json:"hash"`
 	HashType  string    `json:"hashType"`
 	RiskLevel string    `json:"riskLevel"`
 	Links     HashLinks `json:"links"`
 
-	VirusTotal    HashVirusTotal             `json:"virustotal"`
-	MalwareBazaar HashMalwareBazaar          `json:"malwarebazaar"`
-	ThreatFox     *integrations.TFHashResult `json:"threatfox,omitempty"`
+	VirusTotal    integrations.HashVirusTotal    `json:"virustotal"`
+	MalwareBazaar integrations.HashMalwareBazaar `json:"malwarebazaar"`
+	ThreatFox     *integrations.TFHashResult     `json:"threatfox,omitempty"`
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Orchestration helpers ─────────────────────────────────────────────────────
 
 func detectHashType(h string) string {
 	switch len(h) {
@@ -128,7 +77,7 @@ func assessHashRisk(vtMal int, mbFound bool, sandboxMal int) string {
 	}
 }
 
-// ── cache table registration ──────────────────────────────────────────────────
+// ── Cache table registration ──────────────────────────────────────────────────
 
 func init() {
 	hashCacheTables["VT_HASH"] = true
@@ -153,9 +102,10 @@ func LookupHash(hash, vtKey, abusechKey string, useCache bool) (string, error) {
 			VirusTotal:    "https://www.virustotal.com/gui/file/" + hash,
 			MalwareBazaar: "https://bazaar.abuse.ch/sample/" + hash,
 		},
-		MalwareBazaar: HashMalwareBazaar{QueryStatus: "no_api_key"},
+		MalwareBazaar: integrations.HashMalwareBazaar{QueryStatus: "no_api_key"},
 	}
 
+	// ── Per-vendor channel types ──────────────────────────────────────────────
 	type vtRes struct {
 		d   *integrations.VTFileResponse
 		err error
@@ -238,77 +188,20 @@ func LookupHash(hash, vtKey, abusechKey string, useCache bool) (string, error) {
 	mr := <-mbCh
 	tr := <-tfCh
 
-	// ── Populate VirusTotal ───────────────────────────────────────────────────
+	// ── Populate VirusTotal (via integrations mapper) ─────────────────────────
 	sandboxMal := 0
 	if vr.d != nil {
-		a := vr.d.Data.Attributes
-		result.VirusTotal.MD5 = a.MD5
-		result.VirusTotal.SHA1 = a.SHA1
-		result.VirusTotal.SHA256 = a.SHA256
-		result.VirusTotal.MeaningfulName = a.MeaningfulName
-		result.VirusTotal.Magic = a.Magic
-		result.VirusTotal.Magika = a.Magika
-		result.VirusTotal.Malicious = a.LastAnalysisStats.Malicious
-		result.VirusTotal.Suspicious = a.LastAnalysisStats.Suspicious
-		result.VirusTotal.Harmless = a.LastAnalysisStats.Harmless
-		result.VirusTotal.Undetected = a.LastAnalysisStats.Undetected
-		result.VirusTotal.Reputation = a.Reputation
-		result.VirusTotal.SuggestedThreatLabel = a.PopularThreatClassification.SuggestedThreatLabel
+		result.VirusTotal, sandboxMal = integrations.MapVTHashResult(vr.d)
 
-		for _, c := range a.PopularThreatClassification.PopularThreatCategory {
-			result.VirusTotal.PopularThreatCategories = append(result.VirusTotal.PopularThreatCategories, c.Value)
-		}
-		for _, n := range a.PopularThreatClassification.PopularThreatName {
-			result.VirusTotal.PopularThreatNames = append(result.VirusTotal.PopularThreatNames, n.Value)
-		}
-
-		seen := map[string]bool{}
-		for _, sv := range a.SandboxVerdicts {
-			if sv.Category == "malicious" {
-				sandboxMal++
-				for _, mc := range sv.MalwareClassification {
-					if !seen[mc] {
-						result.VirusTotal.SandboxMalwareClassifications = append(result.VirusTotal.SandboxMalwareClassifications, mc)
-						seen[mc] = true
-					}
-				}
-			}
-		}
-
-		if len(a.SigmaAnalysisSummary) > 0 {
-			result.VirusTotal.SigmaAnalysisSummary = make(map[string]SigmaSummaryEntry)
-			for ruleset, stats := range a.SigmaAnalysisSummary {
-				result.VirusTotal.SigmaAnalysisSummary[ruleset] = SigmaSummaryEntry{
-					Critical: stats.Critical, High: stats.High, Medium: stats.Medium, Low: stats.Low,
-				}
-			}
-		}
-
-		result.VirusTotal.SignatureSigners = a.SignatureInfo.Signers
-		if len(a.SignatureInfo.SignersDetails) > 0 {
-			d := a.SignatureInfo.SignersDetails[0]
-			result.VirusTotal.SignerDetail = &VTSignerDetail{
-				CertIssuer: d.CertIssuer, Name: d.Name, Status: d.Status,
-				ValidFrom: d.ValidFrom, ValidTo: d.ValidTo,
-			}
-		}
-
-		// Upgrade links to canonical SHA256
-		if a.SHA256 != "" {
-			result.Links.VirusTotal = "https://www.virustotal.com/gui/file/" + a.SHA256
-			result.Links.MalwareBazaar = "https://bazaar.abuse.ch/sample/" + a.SHA256
+		// Upgrade links to canonical SHA256 once we have the full response.
+		if result.VirusTotal.SHA256 != "" {
+			result.Links.VirusTotal = "https://www.virustotal.com/gui/file/" + result.VirusTotal.SHA256
+			result.Links.MalwareBazaar = "https://bazaar.abuse.ch/sample/" + result.VirusTotal.SHA256
 		}
 	}
 
-	// ── Populate MalwareBazaar ────────────────────────────────────────────────
-	result.MalwareBazaar.QueryStatus = mr.status
-	if mr.d != nil {
-		result.MalwareBazaar.FileName = mr.d.FileName
-		result.MalwareBazaar.FileType = mr.d.FileType
-		result.MalwareBazaar.Signature = mr.d.Signature
-		result.MalwareBazaar.Tags = mr.d.Tags
-		result.MalwareBazaar.Comment = mr.d.Comment
-	}
+	// ── Populate MalwareBazaar (via integrations mapper) ─────────────────────
+	result.MalwareBazaar = integrations.MapMBResult(mr.d, mr.status)
 
 	// ── Populate ThreatFox ────────────────────────────────────────────────────
 	if tr.data != nil {
@@ -317,7 +210,11 @@ func LookupHash(hash, vtKey, abusechKey string, useCache bool) (string, error) {
 		result.ThreatFox = &integrations.TFHashResult{QueryStatus: "error"}
 	}
 
-	result.RiskLevel = assessHashRisk(result.VirusTotal.Malicious, mr.status == "ok" && mr.d != nil, sandboxMal)
+	result.RiskLevel = assessHashRisk(
+		result.VirusTotal.Malicious,
+		mr.status == "ok" && mr.d != nil,
+		sandboxMal,
+	)
 
 	j, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
