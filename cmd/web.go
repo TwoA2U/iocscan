@@ -15,6 +15,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"sync"
@@ -24,12 +25,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// embeddedIndex holds the compiled-in web UI, set by main.go via SetEmbeddedUI.
-var embeddedIndex []byte
+// embeddedFS holds the compiled-in web/ directory, set by main.go via SetEmbeddedUI.
+var embeddedFS fs.FS
 
-// SetEmbeddedUI is called from main.go to pass the //go:embed bytes into this package.
-func SetEmbeddedUI(data []byte) {
-	embeddedIndex = data
+// SetEmbeddedUI is called from main.go to pass the //go:embed FS into this package.
+func SetEmbeddedUI(f interface{ Open(string) (fs.File, error) }) {
+	// Unwrap to the web/ sub-tree so paths are relative (e.g. "index.html" not "web/index.html").
+	sub, err := fs.Sub(f.(fs.FS), "web")
+	if err != nil {
+		panic("embed: could not sub into web/: " + err.Error())
+	}
+	embeddedFS = sub
 }
 
 var webCmd = &cobra.Command{
@@ -41,26 +47,31 @@ var webCmd = &cobra.Command{
 		port, _ := cmd.Flags().GetInt("port")
 		addr := fmt.Sprintf(":%d", port)
 
-		http.HandleFunc("/", serveUI)
+		// API routes registered first so the catch-all "/" doesn't swallow them.
 		http.HandleFunc("/api/scan", serveScan)
 		http.HandleFunc("/api/scan/hash", serveHashScan)
 		http.HandleFunc("/api/cache/clear", serveCacheClear)
+		// Static file handler: serves JS modules (main.js, composables/, components/)
+		// with correct MIME types. Falls back to embedded binary in production.
+		http.HandleFunc("/", serveUI)
 
 		fmt.Printf("🌐 iocscan web UI → http://localhost%s\n", addr)
 		return http.ListenAndServe(addr, nil)
 	},
 }
 
-// serveUI serves the HTML app.
-// Dev mode: reads web/index.html from disk (hot-reload friendly).
-// Production: falls back to the version baked into the binary at compile time.
+// serveUI serves all static files under web/ (index.html, main.js, composables/, components/).
+// Dev mode:    reads from the web/ directory on disk — edit files and refresh without rebuilding.
+// Production:  serves from the embed.FS baked into the binary at compile time.
+// http.FileServer handles MIME types automatically (.js → text/javascript, etc.)
 func serveUI(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if data, err := os.ReadFile("web/index.html"); err == nil {
-		w.Write(data)
+	// Dev mode: web/ directory exists on disk next to the binary.
+	if _, err := os.Stat("web"); err == nil {
+		http.FileServer(http.Dir("web")).ServeHTTP(w, r)
 		return
 	}
-	w.Write(embeddedIndex)
+	// Production: serve from the embedded FS.
+	http.FileServer(http.FS(embeddedFS)).ServeHTTP(w, r)
 }
 
 // scanRequest is the JSON body accepted by POST /api/scan.

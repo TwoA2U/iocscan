@@ -1,15 +1,15 @@
 package main
 
 import (
-	_ "embed"
+	"embed"
 
 	"github.com/TwoA2U/iocscan/cmd"
 )
 
-//go:embed web/index.html
-var embeddedIndex []byte
+//go:embed all:web
+var embeddedFS embed.FS
 
 func main() {
-	cmd.SetEmbeddedUI(embeddedIndex)
+	cmd.SetEmbeddedUI(embeddedFS)
 	cmd.Execute()
 }
