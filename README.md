@@ -115,7 +115,7 @@ iocscan -v <VIRUSTOTAL_KEY> -a <ABUSEIPDB_KEY> -i <IPAPI_KEY> -m <MALWAREBAZAAR_
 | `-v` | [VirusTotal](https://www.virustotal.com/gui/my-apikey) | Yes (complex mode + hash scans) |
 | `-a` | [AbuseIPDB](https://www.abuseipdb.com/account/api) | Yes (complex mode) |
 | `-i` | [ipapi.is](https://ipapi.is/developers.html) | No — free tier works without a key |
-| `-m` | [MalwareBazaar](https://bazaar.abuse.ch/api/) | No — public lookups work without a key |
+| `-b` | [MalwareBazaar](https://bazaar.abuse.ch/api/) | No — public lookups work without a key |
 
 Keys are stored locally and reused on every subsequent scan. They are never sent anywhere except the respective API endpoints.
 
