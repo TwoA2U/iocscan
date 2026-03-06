@@ -1,10 +1,19 @@
 // cmd/web.go — "web" subcommand: starts an HTTP server with the IOC scanner UI.
 //
 // Routes:
-//   GET  /                → HTML single-page app
+//   GET  /                → HTML single-page app (and all web/ static assets)
 //   POST /api/scan        → IP enrichment endpoint
 //   POST /api/scan/hash   → Hash enrichment endpoint
 //   POST /api/cache/clear → Cache management endpoint
+//
+// Improvements in this revision:
+//   1. Rate limiting — a token-bucket limiter (5 req/s burst, 2 req/s sustained)
+//      guards both scan endpoints. Requests that exceed the limit receive HTTP 429
+//      instead of triggering outbound vendor API calls that consume quota.
+//   2. Context propagation — r.Context() is threaded through to Lookup /
+//      LookupHash so a browser disconnect cancels in-flight vendor goroutines.
+//   3. Dedicated ServeMux — no longer uses the default global mux, preventing
+//      accidental route collisions with other packages.
 //
 // Usage:
 //
@@ -23,19 +32,35 @@ import (
 
 	"github.com/TwoA2U/iocscan/utils"
 	"github.com/spf13/cobra"
+	"golang.org/x/time/rate"
 )
 
 // embeddedFS holds the compiled-in web/ directory, set by main.go via SetEmbeddedUI.
 var embeddedFS fs.FS
 
-// SetEmbeddedUI is called from main.go to pass the //go:embed FS into this package.
-func SetEmbeddedUI(f interface{ Open(string) (fs.File, error) }) {
-	// Unwrap to the web/ sub-tree so paths are relative (e.g. "index.html" not "web/index.html").
-	sub, err := fs.Sub(f.(fs.FS), "web")
-	if err != nil {
-		panic("embed: could not sub into web/: " + err.Error())
+// SetEmbeddedUI is called from main.go to pass the embedded web/ FS into this package.
+func SetEmbeddedUI(f fs.FS) {
+	embeddedFS = f
+}
+
+// ── Rate limiter ──────────────────────────────────────────────────────────────
+//
+// scanLimiter caps how many scan requests the server accepts per second.
+// Burst of 5 allows short interactive bursts; sustained rate of 2 req/s is
+// generous for single-user use while preventing runaway scripted abuse.
+var scanLimiter = rate.NewLimiter(rate.Every(500*time.Millisecond), 5)
+
+// rateLimit is a thin middleware wrapper that returns HTTP 429 when the token
+// bucket is empty.
+func rateLimit(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !scanLimiter.Allow() {
+			w.Header().Set("Content-Type", "application/json")
+			http.Error(w, `{"error":"rate limit exceeded — please slow down"}`, http.StatusTooManyRequests)
+			return
+		}
+		next(w, r)
 	}
-	embeddedFS = sub
 }
 
 var webCmd = &cobra.Command{
@@ -47,41 +72,42 @@ var webCmd = &cobra.Command{
 		port, _ := cmd.Flags().GetInt("port")
 		addr := fmt.Sprintf(":%d", port)
 
-		// API routes registered first so the catch-all "/" doesn't swallow them.
-		http.HandleFunc("/api/scan", serveScan)
-		http.HandleFunc("/api/scan/hash", serveHashScan)
-		http.HandleFunc("/api/cache/clear", serveCacheClear)
-		// Static file handler: serves JS modules (main.js, composables/, components/)
-		// with correct MIME types. Falls back to embedded binary in production.
-		http.HandleFunc("/", serveUI)
+		// Use a dedicated mux so we don't pollute the global default mux.
+		// API routes are registered before the catch-all UI handler so that
+		// /api/* paths are never accidentally served the HTML app.
+		mux := http.NewServeMux()
+		mux.HandleFunc("/api/scan", rateLimit(serveScan))
+		mux.HandleFunc("/api/scan/hash", rateLimit(serveHashScan))
+		mux.HandleFunc("/api/cache/clear", serveCacheClear)
+		mux.HandleFunc("/", serveUI)
 
 		fmt.Printf("🌐 iocscan web UI → http://localhost%s\n", addr)
-		return http.ListenAndServe(addr, nil)
+		return http.ListenAndServe(addr, mux)
 	},
 }
 
-// serveUI serves all static files under web/ (index.html, main.js, composables/, components/).
-// Dev mode:    reads from the web/ directory on disk — edit files and refresh without rebuilding.
-// Production:  serves from the embed.FS baked into the binary at compile time.
-// http.FileServer handles MIME types automatically (.js → text/javascript, etc.)
+// serveUI serves the full web/ directory tree (index.html + JS modules + assets).
+// Dev mode:    serves directly from disk when a web/ directory exists (hot-reload).
+// Production:  falls back to the embedded FS baked into the binary by main.go.
 func serveUI(w http.ResponseWriter, r *http.Request) {
-	// Dev mode: web/ directory exists on disk next to the binary.
 	if _, err := os.Stat("web"); err == nil {
 		http.FileServer(http.Dir("web")).ServeHTTP(w, r)
 		return
 	}
-	// Production: serve from the embedded FS.
-	http.FileServer(http.FS(embeddedFS)).ServeHTTP(w, r)
+	if embeddedFS != nil {
+		http.FileServer(http.FS(embeddedFS)).ServeHTTP(w, r)
+		return
+	}
+	http.Error(w, "UI not available", http.StatusNotFound)
 }
 
 // scanRequest is the JSON body accepted by POST /api/scan.
 type scanRequest struct {
 	IP         string `json:"ip"`
-	Mode       string `json:"mode"` // "simple" or "complex" (default: "complex")
 	VTKey      string `json:"vt_key"`
 	AbuseKey   string `json:"abuse_key"`
 	IPApiKey   string `json:"ipapi_key"`
-	AbuseCHKey string `json:"abusech_key"` // Single key for MalwareBazaar + ThreatFox
+	AbuseCHKey string `json:"abusech_key"`
 	UseCache   bool   `json:"use_cache"`
 }
 
@@ -101,11 +127,8 @@ func serveScan(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `"ip" field is required`, http.StatusBadRequest)
 		return
 	}
-	if req.Mode == "" {
-		req.Mode = "complex"
-	}
 
-	// Fall back to saved config if keys were not provided in the request body.
+	// Fall back to saved config for any keys not supplied in the request body.
 	if cfg, err := utils.GetAPI(cfgFile); err == nil {
 		if req.VTKey == "" {
 			req.VTKey = cfg.VTAPI
@@ -140,22 +163,28 @@ func serveScan(w http.ResponseWriter, r *http.Request) {
 		results[i] = entry{IP: ip}
 	}
 
+	// Thread the request context so a browser disconnect cancels in-flight
+	// vendor goroutines instead of letting them run to completion.
+	ctx := r.Context()
+
 	// Process in chunks of 10 concurrently, with a small pause between chunks
 	// to avoid hammering rate-limited APIs on bulk scans.
 	const chunkSize = 10
 	for start := 0; start < len(ips); start += chunkSize {
+		if ctx.Err() != nil {
+			break // client disconnected — stop early
+		}
 		end := start + chunkSize
 		if end > len(ips) {
 			end = len(ips)
 		}
-		chunk := ips[start:end]
 
 		var wg sync.WaitGroup
-		for i, ip := range chunk {
+		for i, ip := range ips[start:end] {
 			wg.Add(1)
 			go func(idx int, ipAddr string) {
 				defer wg.Done()
-				raw, err := processor.Lookup(ipAddr, req.Mode, req.UseCache)
+				raw, err := processor.Lookup(ctx, ipAddr, req.UseCache)
 				if err != nil {
 					results[start+idx].Error = err.Error()
 					return
@@ -166,7 +195,10 @@ func serveScan(w http.ResponseWriter, r *http.Request) {
 		wg.Wait()
 
 		if end < len(ips) {
-			time.Sleep(300 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+			case <-time.After(300 * time.Millisecond):
+			}
 		}
 	}
 
@@ -174,7 +206,7 @@ func serveScan(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(results)
 }
 
-// serveHashScan handles POST /api/scan/hash — enriches a list of hashes.
+// serveHashScan handles POST /api/scan/hash — enriches a list of file hashes.
 func serveHashScan(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -184,7 +216,7 @@ func serveHashScan(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Hashes     []string `json:"hashes"`
 		VTKey      string   `json:"vt_key"`
-		AbuseCHKey string   `json:"abusech_key"` // Single key for MalwareBazaar + ThreatFox
+		AbuseCHKey string   `json:"abusech_key"`
 		UseCache   bool     `json:"use_cache"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -220,8 +252,13 @@ func serveHashScan(w http.ResponseWriter, r *http.Request) {
 		results[i] = entry{Hash: h}
 	}
 
+	ctx := r.Context()
+
 	const chunkSize = 5 // VT free tier: 4 req/min — keep conservative
 	for start := 0; start < len(req.Hashes); start += chunkSize {
+		if ctx.Err() != nil {
+			break
+		}
 		end := start + chunkSize
 		if end > len(req.Hashes) {
 			end = len(req.Hashes)
@@ -232,7 +269,7 @@ func serveHashScan(w http.ResponseWriter, r *http.Request) {
 			wg.Add(1)
 			go func(idx int, hash string) {
 				defer wg.Done()
-				raw, err := utils.LookupHash(hash, req.VTKey, req.AbuseCHKey, req.UseCache)
+				raw, err := utils.LookupHash(ctx, hash, req.VTKey, req.AbuseCHKey, req.UseCache)
 				if err != nil {
 					results[start+idx].Error = err.Error()
 					return
@@ -243,7 +280,10 @@ func serveHashScan(w http.ResponseWriter, r *http.Request) {
 		wg.Wait()
 
 		if end < len(req.Hashes) {
-			time.Sleep(500 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+			case <-time.After(500 * time.Millisecond):
+			}
 		}
 	}
 
@@ -258,11 +298,11 @@ func serveCacheClear(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Table string `json:"table"` // "VT_HASH", "MB_HASH", "TF_HASH", "TF_IP", or "all"
+		Table string `json:"table"` // specific table name, or "all"
 	}
 	json.NewDecoder(r.Body).Decode(&req)
 
-	tables := []string{"VT_HASH", "MB_HASH", "TF_HASH", "TF_IP"}
+	tables := []string{"VT_IP", "ABUSE_IP", "IPAPIIS_IP", "VT_HASH", "MB_HASH", "TF_IP", "TF_HASH"}
 	if req.Table != "" && req.Table != "all" {
 		tables = []string{req.Table}
 	}

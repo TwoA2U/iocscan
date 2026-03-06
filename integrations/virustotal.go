@@ -120,12 +120,16 @@ type VTIPResult struct {
 }
 
 // IPVirusTotal holds the VirusTotal enrichment fields surfaced in an IP scan result.
+// Error is non-empty when the vendor call failed; other fields will be zero values.
+// This allows the orchestrator to return partial results instead of aborting the
+// entire scan when VirusTotal is unavailable (e.g. missing API key, rate limit).
 type IPVirusTotal struct {
-	Malicious  int `json:"malicious"`
-	Suspicious int `json:"suspicious"`
-	Undetected int `json:"undetected"`
-	Harmless   int `json:"harmless"`
-	Reputation int `json:"reputation"`
+	Malicious  int    `json:"malicious"`
+	Suspicious int    `json:"suspicious"`
+	Undetected int    `json:"undetected"`
+	Harmless   int    `json:"harmless"`
+	Reputation int    `json:"reputation"`
+	Error      string `json:"error,omitempty"`
 }
 
 // VTSignerDetail holds code-signing certificate detail for a file hash result.

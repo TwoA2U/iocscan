@@ -1,7 +1,15 @@
 // utils/iputil.go — IP enrichment orchestrator.
 //
 // Coordinates concurrent enrichment of an IP address across all configured
-// threat-intelligence vendors and assembles the unified ComplexResult / IPSimple.
+// threat-intelligence vendors and assembles the unified ComplexResult.
+//
+// All scans run in "complex" mode: AbuseIPDB + VirusTotal + ipapi.is + ThreatFox
+// are queried concurrently. If a vendor call fails the result is still returned
+// with the error surfaced in the relevant vendor field (partial-result behaviour).
+//
+// Context propagation — Lookup / lookupComplex accept a context.Context threaded
+// from the HTTP handler, so a browser disconnect cancels in-flight vendor
+// goroutines instead of burning API quota.
 //
 // Vendor-specific types and mapping logic live in the integrations/ package:
 //   integrations/virustotal.go  → IPVirusTotal, MapVTIPResult
@@ -9,13 +17,14 @@
 //   integrations/threatfox.go  → TFIPResult (used directly, no extra mapping needed)
 //   integrations/ipapi.go      → IPAPIResponse (fields merged into IPGeo here)
 //
-// Public API (unchanged):
+// Public API:
 //   NewIPProcessor(vtKey, abuseKey, ipapiKey, abusechKey) *IPProcessor
-//   (*IPProcessor).Lookup(ip, mode string, useCache bool) (string, error)
+//   (*IPProcessor).Lookup(ctx, ip string, useCache bool) (string, error)
 //   CheckIP(raw string) ([]string, error)
 package utils
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -57,21 +66,7 @@ type IPGeo struct {
 	Hostnames     []string `json:"hostnames,omitempty"`
 }
 
-// IPSimple is the output of a simple (ipapi.is-only) lookup.
-type IPSimple struct {
-	IP          string  `json:"ip"`
-	CompanyName string  `json:"company_name,omitempty"`
-	CompanyType string  `json:"company_type,omitempty"`
-	ASNOrg      string  `json:"asn_org,omitempty"`
-	Country     string  `json:"country,omitempty"`
-	State       string  `json:"state,omitempty"`
-	City        string  `json:"city,omitempty"`
-	Timezone    string  `json:"timezone,omitempty"`
-	RiskLevel   string  `json:"riskLevel"`
-	Links       IPLinks `json:"links"`
-}
-
-// ComplexResult is the vendor-grouped, unified output of a complex IP lookup.
+// ComplexResult is the vendor-grouped, unified output of an IP lookup.
 // Vendor-specific sub-structs (IPVirusTotal, IPAbuseIPDB) are defined in their
 // respective integrations/ files.
 type ComplexResult struct {
@@ -124,35 +119,11 @@ func CheckIP(raw string) ([]string, error) {
 	return ips, nil
 }
 
-func (p *IPProcessor) Lookup(ip, mode string, useCache bool) (string, error) {
-	if strings.ToLower(mode) == "simple" {
-		return p.lookupSimple(ip, useCache)
-	}
-	return p.lookupComplex(ip, useCache)
-}
-
-func (p *IPProcessor) lookupSimple(ip string, useCache bool) (string, error) {
-	if useCache {
-		if cached := getCached(ip, "IPAPIIS_IP"); cached != "" {
-			return cached, nil
-		}
-	}
-	raw, err := integrations.FetchIPAPI(ip, p.ipapiKey)
-	if err != nil {
-		return "", err
-	}
-	out := IPSimple{
-		IP: raw.IP, CompanyName: raw.Company.Name, CompanyType: raw.Company.Type,
-		ASNOrg: raw.ASN.Org, Country: raw.Location.Country, State: raw.Location.State,
-		City: raw.Location.City, Timezone: raw.Location.Timezone,
-		RiskLevel: "CLEAN", Links: newIPLinks(ip),
-	}
-	j, err := json.MarshalIndent(out, "", "  ")
-	if err != nil {
-		return "", err
-	}
-	putCached(ip, string(j), "IPAPIIS_IP")
-	return string(j), nil
+// Lookup enriches a single IP address using all configured vendors concurrently.
+// ctx is threaded through to all vendor HTTP calls so a cancelled request
+// (e.g. browser disconnect) aborts in-flight work immediately.
+func (p *IPProcessor) Lookup(ctx context.Context, ip string, useCache bool) (string, error) {
+	return p.lookupComplex(ctx, ip, useCache)
 }
 
 // ── Per-vendor channel types (internal to lookupComplex) ─────────────────────
@@ -174,7 +145,7 @@ type tfIPRes struct {
 	err  error
 }
 
-func (p *IPProcessor) lookupComplex(ip string, useCache bool) (string, error) {
+func (p *IPProcessor) lookupComplex(ctx context.Context, ip string, useCache bool) (string, error) {
 	abuseCh := make(chan abuseResult, 1)
 	vtCh := make(chan vtIPResult, 1)
 	geoCh := make(chan geoResult, 1)
@@ -183,7 +154,7 @@ func (p *IPProcessor) lookupComplex(ip string, useCache bool) (string, error) {
 	// ── AbuseIPDB ─────────────────────────────────────────────────────────────
 	go func() {
 		if useCache {
-			if cached := getCached(ip, "ABUSE_IP"); cached != "" {
+			if cached := getCacheEntry(ip, "ABUSE_IP"); cached != "" {
 				var out integrations.AbuseIPResult
 				if err := json.Unmarshal([]byte(cached), &out); err == nil {
 					abuseCh <- abuseResult{data: &out}
@@ -194,7 +165,7 @@ func (p *IPProcessor) lookupComplex(ip string, useCache bool) (string, error) {
 		d, err := integrations.FetchAbuseIP(ip, p.abuseKey)
 		if err == nil && d != nil {
 			if j, e := json.Marshal(d); e == nil {
-				putCached(ip, string(j), "ABUSE_IP")
+				putCacheEntry(ip, string(j), "ABUSE_IP")
 			}
 		}
 		abuseCh <- abuseResult{data: d, err: err}
@@ -203,7 +174,7 @@ func (p *IPProcessor) lookupComplex(ip string, useCache bool) (string, error) {
 	// ── VirusTotal ────────────────────────────────────────────────────────────
 	go func() {
 		if useCache {
-			if cached := getCached(ip, "VT_IP"); cached != "" {
+			if cached := getCacheEntry(ip, "VT_IP"); cached != "" {
 				var out integrations.VTIPResult
 				if err := json.Unmarshal([]byte(cached), &out); err == nil {
 					vtCh <- vtIPResult{data: &out}
@@ -214,7 +185,7 @@ func (p *IPProcessor) lookupComplex(ip string, useCache bool) (string, error) {
 		d, err := integrations.FetchVTIP(ip, p.vtKey)
 		if err == nil && d != nil {
 			if j, e := json.Marshal(d); e == nil {
-				putCached(ip, string(j), "VT_IP")
+				putCacheEntry(ip, string(j), "VT_IP")
 			}
 		}
 		vtCh <- vtIPResult{data: d, err: err}
@@ -229,7 +200,7 @@ func (p *IPProcessor) lookupComplex(ip string, useCache bool) (string, error) {
 	// ── ThreatFox ─────────────────────────────────────────────────────────────
 	go func() {
 		if useCache {
-			if cached := getHashCached(ip, "TF_IP"); cached != "" {
+			if cached := getCacheEntry(ip, "TF_IP"); cached != "" {
 				var out integrations.TFIPResult
 				if err := json.Unmarshal([]byte(cached), &out); err == nil {
 					tfCh <- tfIPRes{data: &out}
@@ -240,7 +211,7 @@ func (p *IPProcessor) lookupComplex(ip string, useCache bool) (string, error) {
 		d, err := integrations.FetchTFIP(ip, p.abusechKey)
 		if d != nil {
 			if j, e := json.Marshal(d); e == nil {
-				putHashCached(ip, string(j), "TF_IP")
+				putCacheEntry(ip, string(j), "TF_IP")
 			}
 		}
 		tfCh <- tfIPRes{data: d, err: err}
@@ -251,29 +222,53 @@ func (p *IPProcessor) lookupComplex(ip string, useCache bool) (string, error) {
 	gr := <-geoCh
 	tr := <-tfCh
 
-	if ar.err != nil {
-		return "", fmt.Errorf("AbuseIPDB: %w", ar.err)
-	}
-	if vr.err != nil {
-		return "", fmt.Errorf("VirusTotal: %w", vr.err)
+	// Check for context cancellation — if the caller already gave up, don't
+	// bother assembling and marshalling a result nobody will read.
+	if err := ctx.Err(); err != nil {
+		return "", fmt.Errorf("request cancelled: %w", err)
 	}
 
 	result := ComplexResult{
-		IPAddress: ar.data.IPAddress,
-		RiskLevel: assessRisk(ar.data.AbuseConfidenceScore, vr.data.Malicious),
+		IPAddress: ip,
 		Links:     newIPLinks(ip),
-		Geo: IPGeo{
+	}
+
+	// ── Populate AbuseIPDB — partial result on error ──────────────────────────
+	// Previously the whole scan failed if AbuseIPDB errored. Now we return
+	// whatever we have and surface the error in the vendor field so the UI can
+	// show partial data instead of nothing.
+	if ar.err != nil {
+		result.AbuseIPDB = integrations.IPAbuseIPDB{
+			Error: ar.err.Error(),
+		}
+	} else if ar.data != nil {
+		result.IPAddress = ar.data.IPAddress
+		result.AbuseIPDB = integrations.MapAbuseIPResult(ar.data)
+		result.Geo = IPGeo{
 			ISP:           ar.data.ISP,
 			CountryCode:   ar.data.CountryCode,
 			IsPublic:      ar.data.IsPublic,
 			IsWhitelisted: ar.data.IsWhitelisted,
 			Hostnames:     ar.data.Hostnames,
-		},
-		VirusTotal: integrations.MapVTIPResult(vr.data),
-		AbuseIPDB:  integrations.MapAbuseIPResult(ar.data),
+		}
 	}
 
-	// Merge ipapi.is geo fields — these supplement what AbuseIPDB already provides.
+	// ── Populate VirusTotal — partial result on error ─────────────────────────
+	abuseScore := 0
+	vtMalicious := 0
+	if vr.err != nil {
+		result.VirusTotal = integrations.IPVirusTotal{
+			Error: vr.err.Error(),
+		}
+	} else if vr.data != nil {
+		result.VirusTotal = integrations.MapVTIPResult(vr.data)
+		vtMalicious = vr.data.Malicious
+	}
+	if ar.data != nil {
+		abuseScore = ar.data.AbuseConfidenceScore
+	}
+
+	// ── Merge ipapi.is geo fields ─────────────────────────────────────────────
 	if gr.err == nil && gr.data != nil {
 		result.Geo.Country = gr.data.Location.Country
 		result.Geo.City = gr.data.Location.City
@@ -284,11 +279,14 @@ func (p *IPProcessor) lookupComplex(ip string, useCache bool) (string, error) {
 		}
 	}
 
+	// ── ThreatFox ─────────────────────────────────────────────────────────────
 	if tr.data != nil {
 		result.ThreatFox = tr.data
 	} else if tr.err != nil {
 		result.ThreatFox = &integrations.TFIPResult{QueryStatus: "error"}
 	}
+
+	result.RiskLevel = assessRisk(abuseScore, vtMalicious)
 
 	j, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {

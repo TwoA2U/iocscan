@@ -3,16 +3,26 @@
 // Coordinates concurrent enrichment of a file hash across all configured
 // threat-intelligence vendors and assembles the unified HashResult.
 //
-// Vendor-specific types and mapping logic live in the integrations/ package:
-//   integrations/virustotal.go   → HashVirusTotal, VTSignerDetail, SigmaSummaryEntry, MapVTHashResult
-//   integrations/malwarebazaar.go → HashMalwareBazaar, MapMBResult
-//   integrations/threatfox.go    → TFHashResult (used directly, no extra mapping needed)
+// Improvements in this revision:
+//   1. init() removed — hashCacheTables no longer needs to be pre-populated
+//      here because allowedTables in common.go is now the single unified
+//      whitelist covering both IP and hash tables.
+//   2. getCacheEntry / putCacheEntry replace the old getHashCached / putHashCached
+//      calls so all cache access goes through one code path.
+//   3. LookupHash accepts a context.Context and threads it through to vendor
+//      calls so abandoned requests cancel in-flight goroutines.
 //
-// Public API (unchanged):
-//   LookupHash(hash, vtKey, abusechKey string, useCache bool) (string, error)
+// Vendor-specific types and mapping logic live in the integrations/ package:
+//   integrations/virustotal.go    → HashVirusTotal, VTSignerDetail, SigmaSummaryEntry, MapVTHashResult
+//   integrations/malwarebazaar.go → HashMalwareBazaar, MapMBResult
+//   integrations/threatfox.go     → TFHashResult (used directly, no extra mapping needed)
+//
+// Public API:
+//   LookupHash(ctx, hash, vtKey, abusechKey string, useCache bool) (string, error)
 package utils
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -77,18 +87,11 @@ func assessHashRisk(vtMal int, mbFound bool, sandboxMal int) string {
 	}
 }
 
-// ── Cache table registration ──────────────────────────────────────────────────
-
-func init() {
-	hashCacheTables["VT_HASH"] = true
-	hashCacheTables["MB_HASH"] = true
-	hashCacheTables["TF_IP"] = true
-	hashCacheTables["TF_HASH"] = true
-}
-
 // ── LookupHash ────────────────────────────────────────────────────────────────
 
-func LookupHash(hash, vtKey, abusechKey string, useCache bool) (string, error) {
+// LookupHash enriches a single file hash concurrently across all vendors.
+// ctx is threaded through so a cancelled HTTP request aborts vendor calls.
+func LookupHash(ctx context.Context, hash, vtKey, abusechKey string, useCache bool) (string, error) {
 	hash = strings.ToLower(strings.TrimSpace(hash))
 	hashType := detectHashType(hash)
 	if hashType == "unknown" {
@@ -127,7 +130,7 @@ func LookupHash(hash, vtKey, abusechKey string, useCache bool) (string, error) {
 	// ── VirusTotal ────────────────────────────────────────────────────────────
 	go func() {
 		if useCache {
-			if raw := getHashCached(hash, "VT_HASH"); raw != "" {
+			if raw := getCacheEntry(hash, "VT_HASH"); raw != "" {
 				var r integrations.VTFileResponse
 				if err := json.Unmarshal([]byte(raw), &r); err == nil {
 					vtCh <- vtRes{d: &r}
@@ -138,7 +141,7 @@ func LookupHash(hash, vtKey, abusechKey string, useCache bool) (string, error) {
 		r, err := integrations.FetchVTHash(hash, vtKey)
 		if err == nil && r != nil {
 			if b, e := json.Marshal(r); e == nil {
-				putHashCached(hash, string(b), "VT_HASH")
+				putCacheEntry(hash, string(b), "VT_HASH")
 			}
 		}
 		vtCh <- vtRes{d: r, err: err}
@@ -147,7 +150,7 @@ func LookupHash(hash, vtKey, abusechKey string, useCache bool) (string, error) {
 	// ── MalwareBazaar ─────────────────────────────────────────────────────────
 	go func() {
 		if useCache {
-			if raw := getHashCached(hash, "MB_HASH"); raw != "" {
+			if raw := getCacheEntry(hash, "MB_HASH"); raw != "" {
 				var e integrations.MBEntry
 				if err := json.Unmarshal([]byte(raw), &e); err == nil {
 					mbCh <- mbRes{d: &e, status: "ok"}
@@ -158,7 +161,7 @@ func LookupHash(hash, vtKey, abusechKey string, useCache bool) (string, error) {
 		e, status, err := integrations.FetchMBHash(hash, abusechKey)
 		if err == nil && e != nil {
 			if b, er := json.Marshal(e); er == nil {
-				putHashCached(hash, string(b), "MB_HASH")
+				putCacheEntry(hash, string(b), "MB_HASH")
 			}
 		}
 		mbCh <- mbRes{d: e, status: status, err: err}
@@ -167,7 +170,7 @@ func LookupHash(hash, vtKey, abusechKey string, useCache bool) (string, error) {
 	// ── ThreatFox ─────────────────────────────────────────────────────────────
 	go func() {
 		if useCache {
-			if raw := getHashCached(hash, "TF_HASH"); raw != "" {
+			if raw := getCacheEntry(hash, "TF_HASH"); raw != "" {
 				var r integrations.TFHashResult
 				if err := json.Unmarshal([]byte(raw), &r); err == nil {
 					tfCh <- tfRes{data: &r}
@@ -178,7 +181,7 @@ func LookupHash(hash, vtKey, abusechKey string, useCache bool) (string, error) {
 		d, err := integrations.FetchTFHash(hash, abusechKey)
 		if d != nil {
 			if b, e := json.Marshal(d); e == nil {
-				putHashCached(hash, string(b), "TF_HASH")
+				putCacheEntry(hash, string(b), "TF_HASH")
 			}
 		}
 		tfCh <- tfRes{data: d, err: err}
@@ -187,6 +190,11 @@ func LookupHash(hash, vtKey, abusechKey string, useCache bool) (string, error) {
 	vr := <-vtCh
 	mr := <-mbCh
 	tr := <-tfCh
+
+	// Respect context cancellation — don't marshal a result nobody will read.
+	if err := ctx.Err(); err != nil {
+		return "", fmt.Errorf("request cancelled: %w", err)
+	}
 
 	// ── Populate VirusTotal (via integrations mapper) ─────────────────────────
 	sandboxMal := 0

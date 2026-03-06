@@ -10,7 +10,7 @@ import ResultsTable from './ResultsTable.js';
 
 import {
     // State
-    keys, scanMode, ipInputText, hashInputText,
+    keys, ipInputText, hashInputText,
     ipUseCache, hashUseCache, isDragging,
     ipBulkCount, hashBulkCount,
     currentIOCMode, currentView, hashView, wideShell,
@@ -53,7 +53,7 @@ export default defineComponent({
     setup() {
         return {
             // State
-            keys, scanMode, ipInputText, hashInputText,
+            keys, ipInputText, hashInputText,
             ipUseCache, hashUseCache, isDragging,
             ipBulkCount, hashBulkCount,
             currentIOCMode, currentView, hashView, wideShell,
@@ -186,10 +186,6 @@ export default defineComponent({
               style="width:100%" @keydown.enter.exact.prevent="doIPScan"></textarea>
           </div>
           <div class="flex flex-col gap-2" style="flex-shrink:0">
-            <select v-model="scanMode" class="key-input" style="cursor:pointer;height:44px">
-              <option value="complex">Complex (all sources)</option>
-              <option value="simple">Simple (ipapi.is only)</option>
-            </select>
             <div class="flex gap-2 items-center">
               <button class="scan-btn" :disabled="isIPLoading" @click="doIPScan" style="flex:1">SCAN</button>
               <span v-if="isIPLoading" class="loader"></span>
@@ -271,7 +267,7 @@ export default defineComponent({
                 </div>
               </div>
               <!-- AbuseIPDB card -->
-              <div v-if="colVisible.abuse && activeResult.abuseipdb.confidenceScore != null" class="card" id="card-abuse">
+              <div v-if="colVisible.abuse && activeResult.abuseipdb && activeResult.abuseipdb.confidenceScore != null" class="card" id="card-abuse">
                 <div class="card-head">
                   <span class="card-head-left">🚨 AbuseIPDB</span>
                   <a :href="'https://www.abuseipdb.com/check/'+activeResultIP" target="_blank" rel="noopener" class="card-source-link">↗ AbuseIPDB</a>
@@ -291,7 +287,7 @@ export default defineComponent({
                 </div>
               </div>
               <!-- VirusTotal card -->
-              <div v-if="colVisible.vt && activeResult.virustotal.malicious != null" class="card" id="card-vt">
+              <div v-if="colVisible.vt && activeResult.virustotal && activeResult.virustotal.malicious != null" class="card" id="card-vt">
                 <div class="card-head">
                   <span class="card-head-left">🧪 VirusTotal</span>
                   <a :href="'https://www.virustotal.com/gui/ip-address/'+activeResultIP" target="_blank" rel="noopener" class="card-source-link">↗ VirusTotal</a>

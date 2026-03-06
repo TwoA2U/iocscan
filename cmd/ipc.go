@@ -6,13 +6,14 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/TwoA2U/iocscan/utils"
 	"github.com/spf13/cobra"
 )
 
-// ipcIPAddr is local to ipc to avoid conflict with ips.go
+// ipcIPAddr holds the -i flag value for the ipc subcommand.
 var ipcIPAddr string
 
 var ipcCmd = &cobra.Command{
@@ -36,7 +37,7 @@ var ipcCmd = &cobra.Command{
 
 		fmt.Println("[")
 		for i, ip := range ips {
-			result, err := processor.Lookup(ip, "complex", true)
+			result, err := processor.Lookup(context.Background(), ip, true)
 			if err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "  // ⚠️  %s: %v\n", ip, err)
 				continue

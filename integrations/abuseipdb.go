@@ -57,10 +57,14 @@ type AbuseIPResult struct {
 }
 
 // IPAbuseIPDB holds the AbuseIPDB enrichment fields surfaced in an IP scan result.
+// Error is non-empty when the vendor call failed; other fields will be zero values.
+// This allows the orchestrator to return partial results instead of aborting the
+// entire scan when one vendor is unavailable.
 type IPAbuseIPDB struct {
 	ConfidenceScore int    `json:"confidenceScore"`
 	TotalReports    int    `json:"totalReports"`
 	LastReportedAt  string `json:"lastReportedAt,omitempty"`
+	Error           string `json:"error,omitempty"`
 }
 
 // ── Fetch function ────────────────────────────────────────────────────────────

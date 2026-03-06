@@ -22,7 +22,6 @@ const { ref, reactive, computed, watch, nextTick } = Vue;
 // ─── Core state ───────────────────────────────────────────────────────────────
 
 export const keys         = reactive({ vt:'', abuse:'', ipapi:'', abusech:'' });
-export const scanMode     = ref('complex');
 export const ipInputText  = ref('');
 export const hashInputText= ref('');
 export const ipUseCache   = ref(true);
@@ -370,7 +369,7 @@ export async function doIPScan() {
         const res = await fetch('/api/scan', {
             method:'POST', headers:{'Content-Type':'application/json'},
             body: JSON.stringify({
-                ip, mode:scanMode.value,
+                ip,
                 vt_key:keys.vt, abuse_key:keys.abuse,
                 ipapi_key:keys.ipapi, abusech_key:keys.abusech,
                 use_cache:ipUseCache.value,
