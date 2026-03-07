@@ -243,13 +243,14 @@ export async function doIPScan() {
                 use_cache: ipUseCache.value,
             }),
         });
+        const prevCount = IPResults.allResults.value.length;
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
         IPResults.allResults.value = data;
         IPResults.activeIdx.value  = 0;
-        data.forEach(e => { if (e.result) addHist(e.ip, e.result.riskLevel || 'CLEAN'); });
-        if (currentView.value === 'table') IPResults.tableSortCol.value = '#';
-        nextTick(() => { document.getElementById('cardsView')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+        data.forEach(e => { if (e.result) addHist(e.ip, e.result.riskLevel || 'CLEAN', 'ip'); });
+        if (currentView.value === 'table' && data.length !== prevCount) IPResults.tableSortCol.value = '#';
+        nextTick(() => { document.getElementById('ip-results-bar')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); });
     } catch (e) {
         IPResults.ipError.value = `Scan failed: ${e.message}`;
     } finally {
@@ -283,6 +284,7 @@ export async function doHashScanAction() {
         HashResults.hashError.value = 'Hash scan error: ' + err.message;
     } finally {
         isHashLoading.value = false;
+        nextTick(() => { document.getElementById('hash-results-bar')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); });
     }
 }
 

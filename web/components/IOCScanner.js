@@ -216,7 +216,7 @@ export default defineComponent({
       <!-- IP Results -->
       <div v-if="allResults.length">
         <!-- View toggle + export bar -->
-        <div class="flex items-center justify-between flex-wrap gap-3 mb-4">
+        <div id="ip-results-bar" class="flex items-center justify-between flex-wrap gap-3 mb-4">
           <div class="flex gap-0">
             <button class="view-btn" :class="{active: currentView==='cards'}" @click="setView('cards')">Cards</button>
             <button class="view-btn" :class="{active: currentView==='table'}" @click="setView('table')">Table</button>
@@ -254,6 +254,7 @@ export default defineComponent({
             <div v-if="colVisible.risk" class="mb-4">
               <span :class="['risk-pill', 'risk-' + (activeResult.riskLevel||'CLEAN')]">{{ activeResult.riskLevel || 'CLEAN' }}</span>
               <span style="font-family:'JetBrains Mono',monospace;font-size:0.8rem;color:#e2e8f0;margin-left:12px">{{ activeResultIP }}</span>
+              <span v-if="activeResultEntry && activeResultEntry.error" style="font-size:0.58rem;color:#fbbf24;border:1px solid rgba(251,191,36,0.3);padding:1px 7px;margin-left:8px;letter-spacing:0.06em">⚠ partial</span>
             </div>
             <div class="cards">
               <!-- Network card -->
@@ -263,7 +264,7 @@ export default defineComponent({
                   <a :href="'https://api.ipapi.is/?q='+activeResultIP" target="_blank" rel="noopener" class="card-source-link">↗ ipapi.is</a>
                 </div>
                 <div v-for="[k,v,fkey] in networkRows" :key="k" class="kv" :data-field="fkey" v-show="!fkey || fieldVisible[fkey]">
-                  <span class="kv-key">{{ k }}</span><span class="kv-val">{{ v }}</span>
+                  <span class="kv-key">{{ k }}</span><span class="kv-val" v-html="v"></span>
                 </div>
               </div>
               <!-- AbuseIPDB card -->
@@ -425,7 +426,7 @@ export default defineComponent({
       <!-- Hash Results -->
       <div v-if="allHashResults.length">
         <!-- View toggle + export bar -->
-        <div class="flex items-center justify-between flex-wrap gap-3 mb-4">
+        <div id="hash-results-bar" class="flex items-center justify-between flex-wrap gap-3 mb-4">
           <div class="flex gap-0">
             <button class="view-btn" :class="{active: hashView==='cards'}" @click="setHashView('cards')">Cards</button>
             <button class="view-btn" :class="{active: hashView==='table'}" @click="setHashView('table')">Table</button>
@@ -465,6 +466,7 @@ export default defineComponent({
                   <span v-if="activeHashResult.riskLevel" :class="['risk-pill','risk-'+(activeHashResult.riskLevel)]">{{ activeHashResult.riskLevel }}</span>
                   <span v-if="activeHashResult.hashType"  class="hash-type-badge">{{ activeHashResult.hashType }}</span>
                   <span v-if="activeHashResult.virustotal && activeHashResult.virustotal.suggestedThreatLabel" class="hash-threat-label">{{ activeHashResult.virustotal.suggestedThreatLabel }}</span>
+                  <span v-if="allHashResults[activeHashIdx] && allHashResults[activeHashIdx].error" style="font-size:0.58rem;color:#fbbf24;border:1px solid rgba(251,191,36,0.3);padding:1px 7px;letter-spacing:0.06em">⚠ partial</span>
                 </div>
               </div>
               <div class="flex gap-2" style="flex-shrink:0">

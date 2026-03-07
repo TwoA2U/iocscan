@@ -9,7 +9,7 @@ import {
     colVisible, fieldVisible,
 } from './useColumnVisibility.js';
 
-import { highlight, download } from './utils.js';
+import { highlightJSON } from '../utils.js';
 
 const { ref, computed } = Vue;
 
@@ -47,8 +47,10 @@ export const networkRows = computed(() => {
 
 export const highlightedJSON = computed(() => {
     if (!activeResult.value) return '';
-    return highlight(JSON.stringify(activeResult.value, null, 2));
+    return highlightJSON(JSON.stringify(activeResult.value, null, 2));
 });
+
+// ─── Table columns ────────────────────────────────────────────────────────────
 
 export const TABLE_COLS = [
     { key: '#',                    label: '#',              vis: null,                  get: (d, i) => i + 1 },
@@ -129,15 +131,15 @@ export function renderTableCell(col, row, i) {
     }
     if (col.key === 'link_virustotal') {
         if (!val) return `<span class="t-na">—</span>`;
-        return `<a href="${val}" target="_blank" rel="noopener" class="tbl-link-chip">↗ VT</a>`;
+        return `<a href="${encodeURI(val)}" target="_blank" rel="noopener" class="tbl-link-chip">↗ VT</a>`;
     }
     if (col.key === 'link_abuseipdb') {
         if (!val) return `<span class="t-na">—</span>`;
-        return `<a href="${val}" target="_blank" rel="noopener" class="tbl-link-chip ab">↗ AbuseIPDB</a>`;
+        return `<a href="${encodeURI(val)}" target="_blank" rel="noopener" class="tbl-link-chip ab">↗ AbuseIPDB</a>`;
     }
     if (col.key === 'link_ipapi') {
         if (!val) return `<span class="t-na">—</span>`;
-        return `<a href="${val}" target="_blank" rel="noopener" class="tbl-link-chip ip">↗ IPAPI</a>`;
+        return `<a href="${encodeURI(val)}" target="_blank" rel="noopener" class="tbl-link-chip ip">↗ IPAPI</a>`;
     }
     if (val === '—' || val == null) return `<span class="t-na">—</span>`;
     return String(val);
@@ -188,7 +190,7 @@ export async function copyClipboard(format, copyMenuOpenRef) {
     try {
         await navigator.clipboard.writeText(text);
     } catch (e) {
-        console.warn('Clipboard write failed:', e);
+        _fallbackCopy(text);
     }
 }
 
@@ -204,13 +206,13 @@ export function exportCSV() {
         if (v == null || v === '—') v = '';
         return '"' + String(v).replace(/"/g, '""') + '"';
     }).join(','));
-    download([header, ...lines].join('\n'), 'iocscan_results.csv', 'text/csv');
+    _download([header, ...lines].join('\n'), 'iocscan_results.csv', 'text/csv');
 }
 
 export function exportJSON() {
     const data = _buildFilteredRows();
     if (!data.length) return;
-    download(JSON.stringify(data, null, 2), 'iocscan_results.json', 'application/json');
+    _download(JSON.stringify(data, null, 2), 'iocscan_results.json', 'application/json');
 }
 
 // ─── Private helpers ──────────────────────────────────────────────────────────
@@ -232,6 +234,20 @@ function _buildFilteredRows() {
         });
         return obj;
     });
+}
+
+function _download(content, filename, type) {
+    const blob = new Blob([content], { type });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename; a.click();
+}
+
+function _fallbackCopy(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.cssText = 'position:fixed;opacity:0';
+    document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
 }
 
 // ─── Utility helpers (IP-specific) ───────────────────────────────────────────

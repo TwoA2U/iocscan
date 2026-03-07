@@ -9,7 +9,7 @@ import {
     hashDynCols,
 } from './useColumnVisibility.js';
 
-import { highlight, download } from './utils.js';
+import { highlightJSON } from '../utils.js';
 
 const { ref, computed } = Vue;
 
@@ -63,7 +63,7 @@ export const vtNotFound = computed(() => {
 
 export const highlightedHashJSON = computed(() => {
     if (!activeHashResult.value) return '';
-    return highlight(JSON.stringify(activeHashResult.value, null, 2));
+    return highlightJSON(JSON.stringify(activeHashResult.value, null, 2));
 });
 
 // ─── Table ────────────────────────────────────────────────────────────────────
@@ -223,7 +223,7 @@ export async function copyHashClipboard(format, hashCopyMenuOpenRef) {
         const btn = document.getElementById('hashClipboardBtn');
         if (btn) { const orig = btn.textContent; btn.textContent = '✓ Copied!'; setTimeout(() => btn.textContent = orig, 2000); }
     } catch (e) {
-        console.warn('Clipboard write failed:', e);
+        _fallbackCopy(text);
     }
 }
 
@@ -231,13 +231,13 @@ export function exportHashCSV() {
     const rows = allHashResults.value.filter(e => e.result).map(e => e.result || e);
     if (!rows.length) return;
     const { header, lines } = _buildHashCSV(rows);
-    download([header, ...lines].join('\n'), 'iocscan_hash_results.csv', 'text/csv');
+    _download([header, ...lines].join('\n'), 'iocscan_hash_results.csv', 'text/csv');
 }
 
 export function exportHashJSON() {
     const rows = allHashResults.value.filter(e => e.result).map(e => e.result || e);
     if (!rows.length) return;
-    download(JSON.stringify(rows.map(_buildHashExportRow), null, 2), 'iocscan_hash_results.json', 'application/json');
+    _download(JSON.stringify(rows.map(_buildHashExportRow), null, 2), 'iocscan_hash_results.json', 'application/json');
 }
 
 // ─── Private helpers ──────────────────────────────────────────────────────────
@@ -265,4 +265,18 @@ function _buildHashCSV(rows) {
         return '"' + String(v).replace(/"/g, '""') + '"';
     }).join(','));
     return { header, lines };
+}
+
+function _download(content, filename, type) {
+    const blob = new Blob([content], { type });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename; a.click();
+}
+
+function _fallbackCopy(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.cssText = 'position:fixed;opacity:0';
+    document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
 }

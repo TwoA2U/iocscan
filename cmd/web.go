@@ -26,10 +26,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
-	"log"
 	"net/http"
-	"os"
 	"path/filepath"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -46,18 +46,6 @@ func SetEmbeddedUI(f fs.FS) {
 	embeddedFS = f
 }
 
-// writeJSONError writes a JSON-encoded {"error": msg} body with the given HTTP
-// status code. All API handlers use this instead of http.Error so that error
-// responses always carry Content-Type: application/json and can be parsed
-// by the frontend with res.json() without throwing.
-func writeJSONError(w http.ResponseWriter, msg string, code int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	if err := json.NewEncoder(w).Encode(map[string]string{"error": msg}); err != nil {
-		log.Printf("writeJSONError encode: %v", err)
-	}
-}
-
 // ── Rate limiter ──────────────────────────────────────────────────────────────
 //
 // scanLimiter caps how many scan requests the server accepts per second.
@@ -70,7 +58,8 @@ var scanLimiter = rate.NewLimiter(rate.Every(500*time.Millisecond), 5)
 func rateLimit(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !scanLimiter.Allow() {
-			writeJSONError(w, "rate limit exceeded — please slow down", http.StatusTooManyRequests)
+			w.Header().Set("Content-Type", "application/json")
+			http.Error(w, `{"error":"rate limit exceeded — please slow down"}`, http.StatusTooManyRequests)
 			return
 		}
 		next(w, r)
@@ -136,6 +125,13 @@ var webCmd = &cobra.Command{
 	},
 }
 
+// serveHealth handles GET /api/health — returns a minimal JSON payload that
+// load balancers and monitoring tools can poll to confirm the server is up.
+func serveHealth(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"status":"ok","service":"iocscan"}`))
+}
+
 // serveUI serves the full web/ directory tree (index.html + JS modules + assets).
 // Dev mode:    serves directly from disk when a web/ directory exists (hot-reload).
 // Production:  falls back to the embedded FS baked into the binary by main.go.
@@ -143,7 +139,7 @@ func serveUI(w http.ResponseWriter, r *http.Request) {
 	// Disable browser caching for JS and HTML so that updated files on disk
 	// are always fetched — prevents the "stale ES module" class of bugs.
 	p := r.URL.Path
-	if len(p) >= 3 && (p[len(p)-3:] == ".js" || (len(p) >= 5 && p[len(p)-5:] == ".html")) {
+	if strings.HasSuffix(p, ".js") || strings.HasSuffix(p, ".html") {
 		w.Header().Set("Cache-Control", "no-cache")
 	}
 
@@ -187,17 +183,17 @@ type scanRequest struct {
 // serveScan runs IP enrichment for every IP in the request and returns a JSON array.
 func serveScan(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSONError(w, "method not allowed", http.StatusMethodNotAllowed)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	var req scanRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSONError(w, "invalid JSON body", http.StatusBadRequest)
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
 	if req.IP == "" {
-		writeJSONError(w, "ip field is required", http.StatusBadRequest)
+		http.Error(w, `"ip" field is required`, http.StatusBadRequest)
 		return
 	}
 
@@ -219,7 +215,7 @@ func serveScan(w http.ResponseWriter, r *http.Request) {
 
 	ips, err := utils.CheckIP(req.IP)
 	if err != nil {
-		writeJSONError(w, fmt.Sprintf("invalid IP: %v", err), http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("invalid IP: %v", err), http.StatusBadRequest)
 		return
 	}
 
@@ -251,16 +247,19 @@ func serveScan(w http.ResponseWriter, r *http.Request) {
 		results[i].Result = json.RawMessage(raw)
 	})
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(results); err != nil {
-		log.Printf("serveScan encode: %v", err)
+	out, err := json.Marshal(results)
+	if err != nil {
+		http.Error(w, `{"error":"failed to serialize response"}`, http.StatusInternalServerError)
+		return
 	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(out)
 }
 
 // serveHashScan handles POST /api/scan/hash — enriches a list of file hashes.
 func serveHashScan(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSONError(w, "method not allowed", http.StatusMethodNotAllowed)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -271,11 +270,11 @@ func serveHashScan(w http.ResponseWriter, r *http.Request) {
 		UseCache   bool     `json:"use_cache"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSONError(w, "invalid JSON body", http.StatusBadRequest)
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
 	if len(req.Hashes) == 0 {
-		writeJSONError(w, "hashes field is required", http.StatusBadRequest)
+		http.Error(w, `"hashes" field is required`, http.StatusBadRequest)
 		return
 	}
 	if len(req.Hashes) > 100 {
@@ -315,10 +314,13 @@ func serveHashScan(w http.ResponseWriter, r *http.Request) {
 		results[i].Result = json.RawMessage(raw)
 	})
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(results); err != nil {
-		log.Printf("serveHashScan encode: %v", err)
+	out, err := json.Marshal(results)
+	if err != nil {
+		http.Error(w, `{"error":"failed to serialize response"}`, http.StatusInternalServerError)
+		return
 	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(out)
 }
 
 // serveIOCScan handles POST /api/scan/ioc — accepts a mixed list of IOCs,
@@ -338,7 +340,7 @@ func serveHashScan(w http.ResponseWriter, r *http.Request) {
 //	  { "ioc": "evil.com","type": "domain","error": "domain scanning not yet supported" } ]
 func serveIOCScan(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSONError(w, "method not allowed", http.StatusMethodNotAllowed)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -351,11 +353,11 @@ func serveIOCScan(w http.ResponseWriter, r *http.Request) {
 		UseCache   bool     `json:"use_cache"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSONError(w, "invalid JSON body", http.StatusBadRequest)
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
 	if len(req.IOCs) == 0 {
-		writeJSONError(w, "iocs field is required", http.StatusBadRequest)
+		http.Error(w, `"iocs" field is required`, http.StatusBadRequest)
 		return
 	}
 	if len(req.IOCs) > 100 {
@@ -428,24 +430,19 @@ func serveIOCScan(w http.ResponseWriter, r *http.Request) {
 		results[idx].Result = json.RawMessage(raw)
 	})
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(results); err != nil {
-		log.Printf("serveIOCScan encode: %v", err)
+	out, err := json.Marshal(results)
+	if err != nil {
+		http.Error(w, `{"error":"failed to serialize response"}`, http.StatusInternalServerError)
+		return
 	}
-}
-
-// serveHealth handles GET /api/health — used by monitoring and Docker healthchecks.
-func serveHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]string{"status": "ok"}); err != nil {
-		log.Printf("serveHealth encode: %v", err)
-	}
+	w.Write(out)
 }
 
 // serveCacheClear handles POST /api/cache/clear — wipes a specific cache table or all caches.
 func serveCacheClear(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSONError(w, "method not allowed", http.StatusMethodNotAllowed)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	var req struct {
@@ -459,13 +456,17 @@ func serveCacheClear(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cleared := utils.ClearHashCaches(tables)
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]interface{}{
+	payload := map[string]interface{}{
 		"cleared": cleared,
 		"tables":  tables,
-	}); err != nil {
-		log.Printf("serveCacheClear encode: %v", err)
 	}
+	out, err := json.Marshal(payload)
+	if err != nil {
+		http.Error(w, `{"error":"failed to serialize response"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(out)
 }
 
 func init() {
