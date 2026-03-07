@@ -14,6 +14,7 @@
 package integrations
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -70,7 +71,8 @@ type IPAbuseIPDB struct {
 // ── Fetch function ────────────────────────────────────────────────────────────
 
 // FetchAbuseIP queries AbuseIPDB for an IP address.
-func FetchAbuseIP(ip, apiKey string) (*AbuseIPResult, error) {
+// ctx is honoured for cancellation.
+func FetchAbuseIP(ctx context.Context, ip, apiKey string) (*AbuseIPResult, error) {
 	u, _ := url.Parse(abuseEndpoint)
 	q := u.Query()
 	q.Set("ipAddress", ip)
@@ -78,7 +80,7 @@ func FetchAbuseIP(ip, apiKey string) (*AbuseIPResult, error) {
 	q.Set("verbose", "true")
 	u.RawQuery = q.Encode()
 
-	body, err := httpclient.DoGet(u.String(), map[string]string{
+	body, err := httpclient.DoGetCtx(ctx, u.String(), map[string]string{
 		"Key":    apiKey,
 		"Accept": "application/json",
 	})

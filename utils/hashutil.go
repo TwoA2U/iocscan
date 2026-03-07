@@ -138,7 +138,7 @@ func LookupHash(ctx context.Context, hash, vtKey, abusechKey string, useCache bo
 				}
 			}
 		}
-		r, err := integrations.FetchVTHash(hash, vtKey)
+		r, err := integrations.FetchVTHash(ctx, hash, vtKey)
 		if err == nil && r != nil {
 			if b, e := json.Marshal(r); e == nil {
 				putCacheEntry(hash, string(b), "VT_HASH")
@@ -158,7 +158,7 @@ func LookupHash(ctx context.Context, hash, vtKey, abusechKey string, useCache bo
 				}
 			}
 		}
-		e, status, err := integrations.FetchMBHash(hash, abusechKey)
+		e, status, err := integrations.FetchMBHash(ctx, hash, abusechKey)
 		if err == nil && e != nil {
 			if b, er := json.Marshal(e); er == nil {
 				putCacheEntry(hash, string(b), "MB_HASH")
@@ -178,7 +178,7 @@ func LookupHash(ctx context.Context, hash, vtKey, abusechKey string, useCache bo
 				}
 			}
 		}
-		d, err := integrations.FetchTFHash(hash, abusechKey)
+		d, err := integrations.FetchTFHash(ctx, hash, abusechKey)
 		if d != nil {
 			if b, e := json.Marshal(d); e == nil {
 				putCacheEntry(hash, string(b), "TF_HASH")

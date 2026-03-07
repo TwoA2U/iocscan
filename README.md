@@ -7,7 +7,7 @@
 
 **Fast, multi-source threat intelligence enrichment for IP addresses and file hashes.**
 
-Query IPs and file hashes against VirusTotal, AbuseIPDB, ipapi.is, and MalwareBazaar — from the terminal or a local web UI. Ships as a single self-contained binary with no runtime dependencies.
+Query IPs and file hashes against VirusTotal, AbuseIPDB, ThreatFox, ipapi.is, and MalwareBazaar — from the terminal or a local web UI. Ships as a single self-contained binary with no runtime dependencies.
 
 ---
 
@@ -18,8 +18,10 @@ Query IPs and file hashes against VirusTotal, AbuseIPDB, ipapi.is, and MalwareBa
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Web UI](#web-ui)
+- [API Reference](#api-reference)
 - [CLI Reference](#cli-reference)
 - [Output Format](#output-format)
+- [Risk Scoring](#risk-scoring)
 - [Data Sources](#data-sources)
 - [Supported Platforms](#supported-platforms)
 - [Project Structure](#project-structure)
@@ -31,12 +33,14 @@ Query IPs and file hashes against VirusTotal, AbuseIPDB, ipapi.is, and MalwareBa
 
 ## Features
 
-- **IP enrichment** — geo, ASN, abuse confidence score, and VirusTotal verdicts
+- **IP enrichment** — geo, ASN, abuse confidence score, VirusTotal verdicts, and ThreatFox C2 intelligence
 - **Hash enrichment** — VirusTotal detections, MalwareBazaar intel, code signing validation, Sigma rule hits, sandbox classifications
+- **Multi-signal risk scoring** — `riskLevel` is computed from AbuseIPDB score, VT malicious count, and ThreatFox confidence level combined
 - **Web UI** — interactive scanner with cards/table views, column visibility toggles, export to CSV/JSON, scan history
 - **CLI** — pipe-friendly JSON output for scripting and automation
 - **Bulk scanning** — up to 20 IPs or 100 hashes per request
-- **Local cache** — SQLite-backed caching to avoid redundant API calls and respect rate limits
+- **Local cache** — SQLite-backed caching across all sources (including geo) to avoid redundant API calls and respect rate limits
+- **Rate limiting** — built-in token-bucket limiter protects vendor API quota on the web server
 - **Single binary** — web UI is embedded at compile time, no external files needed
 
 ---
@@ -51,16 +55,17 @@ Query IPs and file hashes against VirusTotal, AbuseIPDB, ipapi.is, and MalwareBa
   │   iocscan   │  CLI or Web UI
   └──────┬──────┘
          │  concurrent requests
-    ┌────┴──────────────────────────┐
-    │         │          │          │
-    ▼         ▼          ▼          ▼
- ipapi.is  AbuseIPDB  VirusTotal  MalwareBazaar
- geo/ASN   abuse      multi-      malware
-           score      engine      samples
-                      verdicts    (hashes only)
-    │         │          │          │
-    └────┬──────────────────────────┘
+    ┌────┴──────────────────────────────┐
+    │         │          │              │
+    ▼         ▼          ▼              ▼
+ ipapi.is  AbuseIPDB  VirusTotal    ThreatFox
+ geo/ASN   abuse      multi-engine  C2/botnet
+           score      verdicts      IOC intel
+                      (IP + hash)   (IP + hash)
+    │         │          │              │
+    └────┬──────────────────────────────┘
          │  merge + compute riskLevel
+         │  (AbuseIPDB score + VT malicious + ThreatFox confidence)
          ▼
    JSON result (CLI output or Web UI)
          │
@@ -68,7 +73,7 @@ Query IPs and file hashes against VirusTotal, AbuseIPDB, ipapi.is, and MalwareBa
    SQLite cache (optional, per-scan)
 ```
 
-IPs and hashes are enriched concurrently across all configured sources. Results are merged into a single normalised JSON structure with a computed `riskLevel` (`CLEAN` → `CRITICAL`). Responses are optionally cached in a local SQLite database to avoid burning API quota on repeated lookups.
+All sources are queried concurrently per indicator. Results are merged into a single normalised JSON structure with a computed `riskLevel` (`CLEAN` → `CRITICAL`). Responses are optionally cached in a local SQLite database to avoid burning API quota on repeated lookups.
 
 ---
 
@@ -107,7 +112,7 @@ go build -o iocscan .
 Run once to persist keys to `~/.iocscan.yaml`:
 
 ```bash
-iocscan -v <VIRUSTOTAL_KEY> -a <ABUSEIPDB_KEY> -i <IPAPI_KEY> -m <MALWAREBAZAAR_KEY>
+iocscan -v <VIRUSTOTAL_KEY> -a <ABUSEIPDB_KEY> -i <IPAPI_KEY> -b <ABUSECH_KEY>
 ```
 
 | Flag | Source | Required |
@@ -115,7 +120,7 @@ iocscan -v <VIRUSTOTAL_KEY> -a <ABUSEIPDB_KEY> -i <IPAPI_KEY> -m <MALWAREBAZAAR_
 | `-v` | [VirusTotal](https://www.virustotal.com/gui/my-apikey) | Yes (complex mode + hash scans) |
 | `-a` | [AbuseIPDB](https://www.abuseipdb.com/account/api) | Yes (complex mode) |
 | `-i` | [ipapi.is](https://ipapi.is/developers.html) | No — free tier works without a key |
-| `-b` | [MalwareBazaar](https://bazaar.abuse.ch/api/) | No — public lookups work without a key |
+| `-b` | [abuse.ch](https://bazaar.abuse.ch/api/) | No — used for both MalwareBazaar and ThreatFox |
 
 Keys are stored locally and reused on every subsequent scan. They are never sent anywhere except the respective API endpoints.
 
@@ -125,10 +130,7 @@ Keys are stored locally and reused on every subsequent scan. They are never sent
 # Start the web UI (recommended)
 iocscan web
 
-# Simple IP lookup — geo & ASN only
-iocscan ips -i 8.8.8.8
-
-# Complex IP enrichment — AbuseIPDB + VirusTotal + geo
+# Full IP enrichment — AbuseIPDB + VirusTotal + ThreatFox + geo
 iocscan ipc -i 8.8.8.8
 
 # Multiple IPs (comma-separated)
@@ -146,8 +148,8 @@ iocscan web --port 9090  # custom port
 
 The web UI is embedded inside the binary — no separate files required. Open your browser after starting the server.
 
-**IP mode** enriches against ipapi.is, AbuseIPDB, and VirusTotal.  
-**Hash mode** enriches against VirusTotal and MalwareBazaar.
+**IP mode** enriches against ipapi.is, AbuseIPDB, VirusTotal, and ThreatFox.  
+**Hash mode** enriches against VirusTotal, MalwareBazaar, and ThreatFox.
 
 | Feature | Description |
 |---------|-------------|
@@ -162,40 +164,113 @@ The web UI is embedded inside the binary — no separate files required. Open yo
 
 ---
 
+## API Reference
+
+The web server exposes the following endpoints. All API responses use `Content-Type: application/json`, including errors.
+
+### `GET /api/health`
+
+Health check endpoint. Returns HTTP 200 when the server is running.
+
+```json
+{ "status": "ok" }
+```
+
+### `POST /api/scan`
+
+IP enrichment. Accepts a single IP or comma-separated list.
+
+```json
+{
+  "ip": "1.2.3.4",
+  "vt_key": "...",
+  "abuse_key": "...",
+  "ipapi_key": "...",
+  "abusech_key": "...",
+  "use_cache": true
+}
+```
+
+Keys are optional if they have been saved via the CLI. Returns a JSON array — one entry per IP.
+
+### `POST /api/scan/hash`
+
+Hash enrichment. Accepts up to 100 hashes (MD5, SHA1, or SHA256).
+
+```json
+{
+  "hashes": ["<hash1>", "<hash2>"],
+  "vt_key": "...",
+  "abusech_key": "...",
+  "use_cache": true
+}
+```
+
+### `POST /api/scan/ioc`
+
+Mixed IOC enrichment. Accepts a list of mixed indicators — IPs and hashes are auto-detected and routed to the correct pipeline.
+
+```json
+{
+  "iocs": ["1.2.3.4", "<sha256>", "5.6.7.8"],
+  "vt_key": "...",
+  "abuse_key": "...",
+  "ipapi_key": "...",
+  "abusech_key": "...",
+  "use_cache": true
+}
+```
+
+### `POST /api/cache/clear`
+
+Clear cached results. Pass a specific table name or `"all"` to wipe everything.
+
+```json
+{ "table": "all" }
+```
+
+Valid table names: `VT_IP`, `ABUSE_IP`, `IPAPIIS_IP`, `VT_HASH`, `MB_HASH`, `TF_IP`, `TF_HASH`.
+
+### Error responses
+
+All errors return a consistent JSON body:
+
+```json
+{ "error": "description of what went wrong" }
+```
+
+---
+
 ## CLI Reference
 
 ```
 iocscan [command] [flags]
 
 Commands:
-  ips    Simple IP lookup — geo & ASN only (ipapi.is)
-  ipc    Complex IP enrichment — AbuseIPDB + VirusTotal + geo
+  ipc    Full IP enrichment — AbuseIPDB + VirusTotal + ThreatFox + geo
   web    Start the web UI
 
 Global Flags:
-  -v, --VT_API      VirusTotal API key
-  -a, --Abuse_API   AbuseIPDB API key
-  -i, --IPapi_API   ipapi.is API key (optional)
-  -b, --AbuseCH     AbuseCH Auth-Key (optional)
-  -c, --config      Config file path (default: ~/.iocscan.yaml)
-  -h, --help        Help
+  -v, --VT_API        VirusTotal API key
+  -a, --Abuse_API     AbuseIPDB API key
+  -i, --IPapi_API     ipapi.is API key (optional)
+  -b, --AbuseCH_API   abuse.ch key — MalwareBazaar + ThreatFox (optional)
+  -c, --config        Config file path (default: ~/.iocscan.yaml)
+  -h, --help          Help
 ```
 
 ### Examples
 
 ```bash
-# Simple lookup — fast, no VT/AbuseIPDB quota used
-iocscan ips -i 1.2.3.4
-
 # Full threat intel enrichment
 iocscan ipc -i 1.2.3.4
 
 # Multiple IPs, pipe to jq to extract risk levels
-iocscan ipc -i "1.2.3.4, 5.6.7.8" | jq '.[].result.riskLevel'
+iocscan ipc -i "1.2.3.4, 5.6.7.8" | jq '.[].riskLevel'
 
 # Filter only critical/high risk IPs
 iocscan ipc -i "1.2.3.4, 5.6.7.8" | \
-  jq '[.[] | select(.result.riskLevel | test("CRITICAL|HIGH"))]'
+  jq '[.[] | select(.riskLevel | test("CRITICAL|HIGH"))]'
 
 # Use a custom config file
 iocscan ipc -i 1.2.3.4 --config /path/to/keys.yaml
@@ -216,7 +291,7 @@ All CLI commands output a JSON array. Each element contains the queried indicato
 [
    {
       "ipAddress": "45.77.34.87",
-      "riskLevel": "HIGH",
+      "riskLevel": "CRITICAL",
       "links": {
          "ipapi": "https://api.ipapi.is/?q=45.77.34.87",
          "abuseipdb": "https://www.abuseipdb.com/check/45.77.34.87",
@@ -227,39 +302,30 @@ All CLI commands output a JSON array. Each element contains the queried indicato
          "country": "Singapore",
          "countryCode": "SG",
          "city": "Singapore",
-         "state": "Singapore",
          "timezone": "Asia/Singapore",
          "isPublic": true,
          "isWhitelisted": false,
-         "hostnames": [
-            "45.77.34.87.vultrusercontent.com"
-         ]
+         "hostnames": ["45.77.34.87.vultrusercontent.com"]
       },
       "virustotal": {
-         "malicious": 3,
+         "malicious": 5,
          "suspicious": 1,
          "undetected": 36,
          "harmless": 54,
          "reputation": -11
       },
       "abuseipdb": {
-         "confidenceScore": 0,
-         "totalReports": 0
+         "confidenceScore": 82,
+         "totalReports": 14
       },
       "threatfox": {
          "queryStatus": "ok",
          "threatType": "botnet_cc",
-         "malware": "win.adaptix_c2",
+         "malware": "win.cobalt_strike",
          "confidenceLevel": 100,
          "firstSeen": "2026-03-06 08:01:28 UTC",
-         "reporter": "DonPasci",
-         "tags": [
-            "AdaptixC2",
-            "AS-VULTR",
-            "AS20473",
-            "c2",
-            "censys"
-         ]
+         "reporter": "abuse_ch",
+         "tags": ["CobaltStrike", "c2"]
       }
    }
 ]
@@ -270,60 +336,50 @@ All CLI commands output a JSON array. Each element contains the queried indicato
 ```json
 [
    {
-      "hash": "2093c195b6c1fd6ab9e1110c13096c5fe130b75a84a27748007ae52d9e951643",
+      "hash": "d55f983c994caa160ec63a59f6b4250fe67fb3e8c43a388aec60a4a6978e9f1e",
       "hashType": "SHA256",
       "riskLevel": "CRITICAL",
       "links": {
-         "virustotal": "https://www.virustotal.com/gui/file/2093c195b6c1fd6ab9e1110c13096c5fe130b75a84a27748007ae52d9e951643",
-         "malwarebazaar": "https://bazaar.abuse.ch/sample/2093c195b6c1fd6ab9e1110c13096c5fe130b75a84a27748007ae52d9e951643"
+         "virustotal": "https://www.virustotal.com/gui/file/d55f983c994caa160ec63a59f6b4250fe67fb3e8c43a388aec60a4a6978e9f1e",
+         "malwarebazaar": "https://bazaar.abuse.ch/sample/d55f983c994caa160ec63a59f6b4250fe67fb3e8c43a388aec60a4a6978e9f1e"
       },
       "virustotal": {
-         "md5": "95f0a946cd6881dd5953e6db4dfb0cb9",
-         "sha1": "d56cc8832fbf9af171359f34847588afbeb41249",
-         "sha256": "2093c195b6c1fd6ab9e1110c13096c5fe130b75a84a27748007ae52d9e951643",
-         "meaningfulName": "agent.crt",
-         "magic": "ASCII text, with very long lines (60285u)",
-         "magika": "CRT",
-         "malicious": 30,
+         "md5": "561cffbaba71a6e8cc1cdceda990ead4",
+         "sha1": "5162f14d75e96edb914d1756349d6e11583db0b0",
+         "sha256": "d55f983c994caa160ec63a59f6b4250fe67fb3e8c43a388aec60a4a6978e9f1e",
+         "meaningfulName": "revil.exe",
+         "malicious": 58,
          "suspicious": 0,
-         "harmless": 0,
-         "undetected": 32,
-         "reputation": -47,
-         "suggestedThreatLabel": "trojan.sodinokibi/yabgc",
-         "popularThreatCategories": [
-            "trojan",
-            "ransomware"
-         ],
-         "popularThreatNames": [
-            "sodinokibi",
-            "yabgc"
-         ]
+         "undetected": 10,
+         "reputation": -436,
+         "suggestedThreatLabel": "trojan.sodinokibi/revil"
       },
       "malwarebazaar": {
          "queryStatus": "ok",
-         "fileName": "agent (2).crt",
-         "fileType": "unknown",
-         "tags": [
-            "Ransomware",
-            "REvil"
-         ]
-      },
-      "threatfox": {
-         "queryStatus": "parse_error"
+         "fileName": "revil.exe",
+         "fileType": "exe",
+         "signature": "Sodinokibi",
+         "tags": ["revil", "Sodinokibi", "signed"]
       }
    }
 ]
 ```
 
-### Risk levels
+---
 
-| Level | Meaning |
-|-------|---------|
-| `CLEAN` | No detections across all sources |
-| `LOW` | Minor indicators, likely benign |
-| `MEDIUM` | Some detections or moderate abuse score |
-| `HIGH` | Significant detections or high abuse score |
-| `CRITICAL` | Confirmed malicious across multiple sources |
+## Risk Scoring
+
+`riskLevel` is computed from three independent signals. Any single signal is sufficient to escalate the level — a confirmed ThreatFox C2 hit will raise the risk even if AbuseIPDB and VirusTotal show nothing yet.
+
+| Level | AbuseIPDB score | VT malicious engines | ThreatFox confidence |
+|-------|:-:|:-:|:-:|
+| `CRITICAL` | ≥ 75 | ≥ 5 | ≥ 75 |
+| `HIGH` | ≥ 40 | ≥ 2 | ≥ 50 |
+| `MEDIUM` | ≥ 10 | ≥ 1 | > 0 |
+| `LOW` | > 0 | — | — |
+| `CLEAN` | 0 | 0 | 0 |
+
+Thresholds are defined in `utils/iputil.go` (`assessRisk` function) and can be adjusted to suit your environment.
 
 ---
 
@@ -335,8 +391,9 @@ All CLI commands output a JSON array. Each element contains the queried indicato
 | [AbuseIPDB](https://www.abuseipdb.com) | Abuse confidence score, report history | 1,000 req/day |
 | [VirusTotal](https://www.virustotal.com) | Multi-engine verdicts for IPs and hashes | 4 req/min, 500 req/day |
 | [MalwareBazaar](https://bazaar.abuse.ch) | Malware sample metadata, tags, signatures | Public API, no hard limit |
+| [ThreatFox](https://threatfox.abuse.ch) | C2/botnet IOC intelligence for IPs and hashes | Public API, no hard limit |
 
-All sources are queried concurrently per indicator. Results are merged and optionally cached locally to minimise repeat API usage.
+All sources are queried concurrently per indicator. Results are merged and cached locally to minimise repeat API usage. Cache covers all five sources including geo lookups.
 
 ---
 
@@ -356,34 +413,40 @@ Linux and Windows binaries are compressed with UPX. macOS binaries are left unco
 
 ```
 iocscan/
-│
-├── main.go                 — entry point
-│
-├── cmd/                    — CLI subcommands
-│   ├── root.go             — API key management, config
-│   ├── ips.go              — ips subcommand (simple lookup)
-│   ├── ipc.go              — ipc subcommand (complex enrichment)
-│   └── web.go              — web subcommand (HTTP server + handlers)
-│
-├── integrations/           — threat intelligence integrations
-│   ├── abuseipdb.go        — AbuseIPDB integration
-│   ├── ipapi.go            — ipapi.is integration
-│   ├── malwarebazaar.go    — MalwareBazaar integration
-│   ├── threatfox.go        — ThreatFox integration
-│   └── virustotal.go       — VirusTotal integration
-│
+├── main.go                  — entry point, embeds web/ at compile time
+├── cmd/                     — CLI commands
+│   ├── ipc.go               — ipc subcommand (full IP enrichment)
+│   ├── root.go              — root command, CLI configuration
+│   └── web.go               — web server, HTTP handlers, rate limiting
+├── dist/                    — build artifacts / release output
+├── integrations/            — threat intelligence vendor integrations
+│   ├── abuseipdb.go         — AbuseIPDB API integration
+│   ├── ipapi.go             — IP geolocation lookup (ipapi.is)
+│   ├── malwarebazaar.go     — MalwareBazaar hash lookup
+│   ├── threatfox.go         — ThreatFox IOC lookup (IPs and hashes)
+│   └── virustotal.go        — VirusTotal API integration (IPs and hashes)
 ├── internal/
-│   └── httpclient/         — internal HTTP client wrapper
+│   └── httpclient/          — shared HTTP client with context support
 │       └── http.go
-│
-├── utils/                  — enrichment logic
-│   ├── iputil.go           — IP lookup helpers
-│   ├── hashutil.go         — hash lookup helpers
-│   ├── iocutil.go          — shared IOC helpers
-│   └── common.go           — config, SQLite cache, API key helpers
-│
-└── web/
-    └── index.html          — Vue 3 single-page web UI
+├── utils/                   — enrichment logic and helpers
+│   ├── common.go            — config, cache helpers, shared types
+│   ├── hashutil.go          — hash enrichment orchestration
+│   ├── iocutil.go           — IOC type detection and validation
+│   └── iputil.go            — IP enrichment orchestration, risk scoring
+└── web/                     — Vue 3 + TailwindCSS web UI
+    ├── components/
+    │   ├── ColumnDrawer.js  — column visibility drawer
+    │   ├── IOCScanner.js    — main scanner component
+    │   └── ResultsTable.js  — sortable results table
+    ├── composables/
+    │   ├── useColumnVisibility.js — column toggle state
+    │   ├── useHashResults.js      — hash result state and export logic
+    │   ├── useIOCScan.js          — scan submission and polling
+    │   ├── useIPResults.js        — IP result state and export logic
+    │   ├── useScanHistory.js      — scan history management
+    │   └── utils.js               — shared helpers (highlight, download, escapeHTML)
+    ├── index.html           — main UI entry point
+    └── main.js              — Vue app bootstrap
 ```
 
 ---
@@ -411,6 +474,13 @@ go build -o iocscan .
 ```
 
 During development, `iocscan web` reads `web/index.html` directly from disk — edit the file and refresh the browser without rebuilding. In production (or when the file is absent on disk), the version embedded at compile time is served.
+
+### Health check
+
+```bash
+curl http://localhost:8080/api/health
+# {"status":"ok"}
+```
 
 ### Dry-run release build
 
@@ -459,7 +529,7 @@ Contributions are welcome. Please follow these steps:
 
 ### Good areas to contribute
 
-- New threat intelligence sources
+- New threat intelligence sources (Shodan, GreyNoise, OTX, Censys)
 - CLI output improvements (colour, table formatting)
 - Web UI features or bug fixes
 - Performance improvements to concurrent enrichment

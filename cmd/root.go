@@ -33,8 +33,7 @@ First-time setup — save your API keys:
   iocscan -v <VT_KEY> -a <ABUSE_KEY> -i <IPAPI_KEY> -b <ABUSECH_KEY>
 
 Then scan:
-  iocscan ips -i 8.8.8.8          (simple: geo/ASN only)
-  iocscan ipc -i 8.8.8.8          (complex: all sources)
+  iocscan ipc -i 8.8.8.8          (full enrichment: AbuseIPDB + VirusTotal + geo + ThreatFox)
   iocscan web                      (start web UI on :8080)`,
 
 	Run: func(cmd *cobra.Command, args []string) {

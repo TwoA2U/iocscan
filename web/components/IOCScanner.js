@@ -263,7 +263,7 @@ export default defineComponent({
                   <a :href="'https://api.ipapi.is/?q='+activeResultIP" target="_blank" rel="noopener" class="card-source-link">↗ ipapi.is</a>
                 </div>
                 <div v-for="[k,v,fkey] in networkRows" :key="k" class="kv" :data-field="fkey" v-show="!fkey || fieldVisible[fkey]">
-                  <span class="kv-key">{{ k }}</span><span class="kv-val" v-html="v"></span>
+                  <span class="kv-key">{{ k }}</span><span class="kv-val">{{ v }}</span>
                 </div>
               </div>
               <!-- AbuseIPDB card -->

@@ -162,7 +162,7 @@ func (p *IPProcessor) lookupComplex(ctx context.Context, ip string, useCache boo
 				}
 			}
 		}
-		d, err := integrations.FetchAbuseIP(ip, p.abuseKey)
+		d, err := integrations.FetchAbuseIP(ctx, ip, p.abuseKey)
 		if err == nil && d != nil {
 			if j, e := json.Marshal(d); e == nil {
 				putCacheEntry(ip, string(j), "ABUSE_IP")
@@ -182,7 +182,7 @@ func (p *IPProcessor) lookupComplex(ctx context.Context, ip string, useCache boo
 				}
 			}
 		}
-		d, err := integrations.FetchVTIP(ip, p.vtKey)
+		d, err := integrations.FetchVTIP(ctx, ip, p.vtKey)
 		if err == nil && d != nil {
 			if j, e := json.Marshal(d); e == nil {
 				putCacheEntry(ip, string(j), "VT_IP")
@@ -193,7 +193,21 @@ func (p *IPProcessor) lookupComplex(ctx context.Context, ip string, useCache boo
 
 	// ── ipapi.is ──────────────────────────────────────────────────────────────
 	go func() {
-		d, err := integrations.FetchIPAPI(ip, p.ipapiKey)
+		if useCache {
+			if cached := getCacheEntry(ip, "IPAPIIS_IP"); cached != "" {
+				var out integrations.IPAPIResponse
+				if err := json.Unmarshal([]byte(cached), &out); err == nil {
+					geoCh <- geoResult{data: &out}
+					return
+				}
+			}
+		}
+		d, err := integrations.FetchIPAPI(ctx, ip, p.ipapiKey)
+		if err == nil && d != nil {
+			if j, e := json.Marshal(d); e == nil {
+				putCacheEntry(ip, string(j), "IPAPIIS_IP")
+			}
+		}
 		geoCh <- geoResult{data: d, err: err}
 	}()
 
@@ -208,7 +222,7 @@ func (p *IPProcessor) lookupComplex(ctx context.Context, ip string, useCache boo
 				}
 			}
 		}
-		d, err := integrations.FetchTFIP(ip, p.abusechKey)
+		d, err := integrations.FetchTFIP(ctx, ip, p.abusechKey)
 		if d != nil {
 			if j, e := json.Marshal(d); e == nil {
 				putCacheEntry(ip, string(j), "TF_IP")
@@ -286,7 +300,11 @@ func (p *IPProcessor) lookupComplex(ctx context.Context, ip string, useCache boo
 		result.ThreatFox = &integrations.TFIPResult{QueryStatus: "error"}
 	}
 
-	result.RiskLevel = assessRisk(abuseScore, vtMalicious)
+	tfConfidence := 0
+	if tr.data != nil && tr.data.QueryStatus == "ok" {
+		tfConfidence = tr.data.ConfidenceLevel
+	}
+	result.RiskLevel = assessRisk(abuseScore, vtMalicious, tfConfidence)
 
 	j, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
@@ -297,13 +315,15 @@ func (p *IPProcessor) lookupComplex(ctx context.Context, ip string, useCache boo
 
 // ── Risk assessment ───────────────────────────────────────────────────────────
 
-func assessRisk(abuseScore, vtMalicious int) string {
+// assessRisk computes a risk level from three independent signals.
+// Any single high-confidence signal is sufficient to escalate the level.
+func assessRisk(abuseScore, vtMalicious, tfConfidence int) string {
 	switch {
-	case abuseScore >= 75 || vtMalicious >= 5:
+	case abuseScore >= 75 || vtMalicious >= 5 || tfConfidence >= 75:
 		return "CRITICAL"
-	case abuseScore >= 40 || vtMalicious >= 2:
+	case abuseScore >= 40 || vtMalicious >= 2 || tfConfidence >= 50:
 		return "HIGH"
-	case abuseScore >= 10 || vtMalicious >= 1:
+	case abuseScore >= 10 || vtMalicious >= 1 || tfConfidence > 0:
 		return "MEDIUM"
 	case abuseScore > 0:
 		return "LOW"

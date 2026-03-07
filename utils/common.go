@@ -100,13 +100,16 @@ func WriteConf(vtAPI, abuseAPI, ipapiAPI, abuseCHAPI string) {
 
 const cacheMaxAge = 30 * 24 * time.Hour
 
-// sharedDB is the single long-lived database connection opened by InitDB.
-// All cache helpers use this instead of opening/closing per query.
-// Guarded by dbOnce so concurrent callers don't race on first use.
+// sharedDB is the single long-lived database connection.
+// Protected by dbMu; dbReady flips to true once the connection is established.
+// Using a mutex instead of sync.Once means getSharedDB() can succeed on a
+// later call even if an earlier call failed (e.g. DB file didn't exist yet
+// when the process started but InitDB() has since created it).
 var (
-	sharedDB *sql.DB
-	dbOnce   sync.Once
-	dbErr    error
+	sharedDB  *sql.DB
+	dbMu      sync.Mutex
+	dbReady   bool
+	dbInitErr error
 )
 
 // allowedTables is the unified whitelist of valid cache table names.
@@ -150,33 +153,38 @@ func dbPath() (string, error) {
 	return filepath.Join(home, ".iocscan.db"), nil
 }
 
-// getSharedDB returns the long-lived *sql.DB, initialising it on first call.
-// Returns an error if the database file does not exist (setup not run yet).
+// getSharedDB returns the long-lived *sql.DB, initialising it on first
+// successful call. Unlike sync.Once, a failed attempt does NOT permanently
+// lock out future calls — so if the DB file didn't exist when the process
+// started (user forgot to run setup) but InitDB() has since created it,
+// the next cache access will succeed without restarting.
 func getSharedDB() (*sql.DB, error) {
-	dbOnce.Do(func() {
-		path, err := dbPath()
-		if err != nil {
-			dbErr = err
-			return
-		}
-		if _, err := os.Stat(path); err != nil {
-			dbErr = fmt.Errorf("cache DB not found — run `iocscan` setup first")
-			return
-		}
-		db, err := sql.Open("sqlite", path)
-		if err != nil {
-			dbErr = err
-			return
-		}
-		// SQLite only supports one concurrent writer; cap the pool accordingly.
-		db.SetMaxOpenConns(1)
-		db.SetMaxIdleConns(1)
-		db.SetConnMaxLifetime(0) // keep the connection alive indefinitely
-		sharedDB = db
-	})
-	if dbErr != nil {
-		return nil, dbErr
+	dbMu.Lock()
+	defer dbMu.Unlock()
+	if dbReady {
+		return sharedDB, nil
 	}
+	path, err := dbPath()
+	if err != nil {
+		dbInitErr = err
+		return nil, err
+	}
+	if _, err := os.Stat(path); err != nil {
+		dbInitErr = fmt.Errorf("cache DB not found — run `iocscan` setup first")
+		return nil, dbInitErr
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		dbInitErr = err
+		return nil, err
+	}
+	// SQLite only supports one concurrent writer; cap the pool accordingly.
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	db.SetConnMaxLifetime(0) // keep the connection alive indefinitely
+	sharedDB = db
+	dbReady = true
+	dbInitErr = nil
 	return sharedDB, nil
 }
 
@@ -248,6 +256,15 @@ func InitDB() {
 		return
 	}
 
+	// Reset dbReady so the next getSharedDB() call re-opens the connection
+	// against the newly created (or already-existing) DB file. This is safe
+	// here because InitDB() is only called from the CLI setup path, not from
+	// concurrent request handlers.
+	dbMu.Lock()
+	dbReady = false
+	sharedDB = nil
+	dbMu.Unlock()
+
 	// Warm up the shared connection pool immediately.
 	if _, err := getSharedDB(); err != nil {
 		fmt.Fprintf(os.Stderr, "InitDB warm-up: %v\n", err)
@@ -304,20 +321,6 @@ func putCacheEntry(key, data, table string) {
 	q := fmt.Sprintf("INSERT OR REPLACE INTO %s (KEY, DATA) VALUES (?, ?)", table)
 	db.Exec(q, key, data)
 }
-
-// ── Backward-compat shims ─────────────────────────────────────────────────────
-// getCached / putCached / getHashCached / putHashCached are kept so that any
-// callers that haven't been migrated yet continue to compile and work.
-// They simply delegate to the unified helpers above.
-
-func getCached(key, table string) string     { return getCacheEntry(key, table) }
-func putCached(key, data, table string)      { putCacheEntry(key, data, table) }
-func getHashCached(key, table string) string { return getCacheEntry(key, table) }
-func putHashCached(key, data, table string)  { putCacheEntry(key, data, table) }
-
-// hashCacheTables is kept for backward compatibility with any code that still
-// references it; it now mirrors allowedTables so whitelist checks still pass.
-var hashCacheTables = allowedTables
 
 // ── ClearCaches ───────────────────────────────────────────────────────────────
 

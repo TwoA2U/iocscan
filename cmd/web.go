@@ -22,11 +22,14 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -43,6 +46,18 @@ func SetEmbeddedUI(f fs.FS) {
 	embeddedFS = f
 }
 
+// writeJSONError writes a JSON-encoded {"error": msg} body with the given HTTP
+// status code. All API handlers use this instead of http.Error so that error
+// responses always carry Content-Type: application/json and can be parsed
+// by the frontend with res.json() without throwing.
+func writeJSONError(w http.ResponseWriter, msg string, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	if err := json.NewEncoder(w).Encode(map[string]string{"error": msg}); err != nil {
+		log.Printf("writeJSONError encode: %v", err)
+	}
+}
+
 // ── Rate limiter ──────────────────────────────────────────────────────────────
 //
 // scanLimiter caps how many scan requests the server accepts per second.
@@ -55,11 +70,44 @@ var scanLimiter = rate.NewLimiter(rate.Every(500*time.Millisecond), 5)
 func rateLimit(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !scanLimiter.Allow() {
-			w.Header().Set("Content-Type", "application/json")
-			http.Error(w, `{"error":"rate limit exceeded — please slow down"}`, http.StatusTooManyRequests)
+			writeJSONError(w, "rate limit exceeded — please slow down", http.StatusTooManyRequests)
 			return
 		}
 		next(w, r)
+	}
+}
+
+// ── runChunked ────────────────────────────────────────────────────────────────
+//
+// runChunked fans out fn(i) for each index in [0, count) in batches of
+// chunkSize, waiting for each batch to finish before starting the next.
+// Between batches it sleeps for delay (unless ctx is already cancelled).
+// fn receives the absolute index into the full slice so callers can write
+// directly into a pre-allocated results slice without synchronisation.
+func runChunked(ctx context.Context, count, chunkSize int, delay time.Duration, fn func(i int)) {
+	for start := 0; start < count; start += chunkSize {
+		if ctx.Err() != nil {
+			return // client disconnected — stop early
+		}
+		end := start + chunkSize
+		if end > count {
+			end = count
+		}
+		var wg sync.WaitGroup
+		for i := start; i < end; i++ {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				fn(idx)
+			}(i)
+		}
+		wg.Wait()
+		if end < count {
+			select {
+			case <-ctx.Done():
+			case <-time.After(delay):
+			}
+		}
 	}
 }
 
@@ -76,8 +124,10 @@ var webCmd = &cobra.Command{
 		// API routes are registered before the catch-all UI handler so that
 		// /api/* paths are never accidentally served the HTML app.
 		mux := http.NewServeMux()
+		mux.HandleFunc("/api/health", serveHealth)
 		mux.HandleFunc("/api/scan", rateLimit(serveScan))
 		mux.HandleFunc("/api/scan/hash", rateLimit(serveHashScan))
+		mux.HandleFunc("/api/scan/ioc", rateLimit(serveIOCScan))
 		mux.HandleFunc("/api/cache/clear", serveCacheClear)
 		mux.HandleFunc("/", serveUI)
 
@@ -90,15 +140,38 @@ var webCmd = &cobra.Command{
 // Dev mode:    serves directly from disk when a web/ directory exists (hot-reload).
 // Production:  falls back to the embedded FS baked into the binary by main.go.
 func serveUI(w http.ResponseWriter, r *http.Request) {
-	if _, err := os.Stat("web"); err == nil {
-		http.FileServer(http.Dir("web")).ServeHTTP(w, r)
-		return
+	// Disable browser caching for JS and HTML so that updated files on disk
+	// are always fetched — prevents the "stale ES module" class of bugs.
+	p := r.URL.Path
+	if len(p) >= 3 && (p[len(p)-3:] == ".js" || (len(p) >= 5 && p[len(p)-5:] == ".html")) {
+		w.Header().Set("Cache-Control", "no-cache")
+	}
+
+	// Check CWD first, then the directory the binary lives in, then fall back
+	// to the embedded FS.  This means the binary can be run from any directory
+	// and will still pick up a live web/ tree sitting next to the executable.
+	for _, dir := range webDirs() {
+		if _, err := os.Stat(dir); err == nil {
+			http.FileServer(http.Dir(dir)).ServeHTTP(w, r)
+			return
+		}
 	}
 	if embeddedFS != nil {
 		http.FileServer(http.FS(embeddedFS)).ServeHTTP(w, r)
 		return
 	}
 	http.Error(w, "UI not available", http.StatusNotFound)
+}
+
+// webDirs returns candidate paths for the web/ directory in preference order:
+// 1. web/  relative to the current working directory (original behaviour)
+// 2. web/  sitting next to the running executable
+func webDirs() []string {
+	candidates := []string{"web"}
+	if exe, err := os.Executable(); err == nil {
+		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "web"))
+	}
+	return candidates
 }
 
 // scanRequest is the JSON body accepted by POST /api/scan.
@@ -114,17 +187,17 @@ type scanRequest struct {
 // serveScan runs IP enrichment for every IP in the request and returns a JSON array.
 func serveScan(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeJSONError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	var req scanRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		writeJSONError(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
 	if req.IP == "" {
-		http.Error(w, `"ip" field is required`, http.StatusBadRequest)
+		writeJSONError(w, "ip field is required", http.StatusBadRequest)
 		return
 	}
 
@@ -146,7 +219,7 @@ func serveScan(w http.ResponseWriter, r *http.Request) {
 
 	ips, err := utils.CheckIP(req.IP)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("invalid IP: %v", err), http.StatusBadRequest)
+		writeJSONError(w, fmt.Sprintf("invalid IP: %v", err), http.StatusBadRequest)
 		return
 	}
 
@@ -169,47 +242,25 @@ func serveScan(w http.ResponseWriter, r *http.Request) {
 
 	// Process in chunks of 10 concurrently, with a small pause between chunks
 	// to avoid hammering rate-limited APIs on bulk scans.
-	const chunkSize = 10
-	for start := 0; start < len(ips); start += chunkSize {
-		if ctx.Err() != nil {
-			break // client disconnected — stop early
+	runChunked(ctx, len(ips), 10, 300*time.Millisecond, func(i int) {
+		raw, err := processor.Lookup(ctx, ips[i], req.UseCache)
+		if err != nil {
+			results[i].Error = err.Error()
+			return
 		}
-		end := start + chunkSize
-		if end > len(ips) {
-			end = len(ips)
-		}
-
-		var wg sync.WaitGroup
-		for i, ip := range ips[start:end] {
-			wg.Add(1)
-			go func(idx int, ipAddr string) {
-				defer wg.Done()
-				raw, err := processor.Lookup(ctx, ipAddr, req.UseCache)
-				if err != nil {
-					results[start+idx].Error = err.Error()
-					return
-				}
-				results[start+idx].Result = json.RawMessage(raw)
-			}(i, ip)
-		}
-		wg.Wait()
-
-		if end < len(ips) {
-			select {
-			case <-ctx.Done():
-			case <-time.After(300 * time.Millisecond):
-			}
-		}
-	}
+		results[i].Result = json.RawMessage(raw)
+	})
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(results)
+	if err := json.NewEncoder(w).Encode(results); err != nil {
+		log.Printf("serveScan encode: %v", err)
+	}
 }
 
 // serveHashScan handles POST /api/scan/hash — enriches a list of file hashes.
 func serveHashScan(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeJSONError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -220,11 +271,11 @@ func serveHashScan(w http.ResponseWriter, r *http.Request) {
 		UseCache   bool     `json:"use_cache"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		writeJSONError(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
 	if len(req.Hashes) == 0 {
-		http.Error(w, `"hashes" field is required`, http.StatusBadRequest)
+		writeJSONError(w, "hashes field is required", http.StatusBadRequest)
 		return
 	}
 	if len(req.Hashes) > 100 {
@@ -254,47 +305,147 @@ func serveHashScan(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	const chunkSize = 5 // VT free tier: 4 req/min — keep conservative
-	for start := 0; start < len(req.Hashes); start += chunkSize {
-		if ctx.Err() != nil {
-			break
+	// VT free tier: 4 req/min — keep chunk size conservative
+	runChunked(ctx, len(req.Hashes), 5, 500*time.Millisecond, func(i int) {
+		raw, err := utils.LookupHash(ctx, req.Hashes[i], req.VTKey, req.AbuseCHKey, req.UseCache)
+		if err != nil {
+			results[i].Error = err.Error()
+			return
 		}
-		end := start + chunkSize
-		if end > len(req.Hashes) {
-			end = len(req.Hashes)
-		}
+		results[i].Result = json.RawMessage(raw)
+	})
 
-		var wg sync.WaitGroup
-		for i, h := range req.Hashes[start:end] {
-			wg.Add(1)
-			go func(idx int, hash string) {
-				defer wg.Done()
-				raw, err := utils.LookupHash(ctx, hash, req.VTKey, req.AbuseCHKey, req.UseCache)
-				if err != nil {
-					results[start+idx].Error = err.Error()
-					return
-				}
-				results[start+idx].Result = json.RawMessage(raw)
-			}(i, h)
-		}
-		wg.Wait()
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(results); err != nil {
+		log.Printf("serveHashScan encode: %v", err)
+	}
+}
 
-		if end < len(req.Hashes) {
-			select {
-			case <-ctx.Done():
-			case <-time.After(500 * time.Millisecond):
-			}
+// serveIOCScan handles POST /api/scan/ioc — accepts a mixed list of IOCs,
+// auto-detects each type via DetectIOCType, and routes each to the correct
+// enrichment path. IPs and hashes are processed concurrently within their
+// respective pipelines.
+//
+// Request body:
+//
+//	{ "iocs": ["1.2.3.4", "abc123...", "evil.com"], "use_cache": true,
+//	  "vt_key": "...", "abuse_key": "...", "ipapi_key": "...", "abusech_key": "..." }
+//
+// Response:
+//
+//	[ { "ioc": "1.2.3.4", "type": "ip",   "result": {...} },
+//	  { "ioc": "abc123",  "type": "hash",  "result": {...} },
+//	  { "ioc": "evil.com","type": "domain","error": "domain scanning not yet supported" } ]
+func serveIOCScan(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSONError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		IOCs       []string `json:"iocs"`
+		VTKey      string   `json:"vt_key"`
+		AbuseKey   string   `json:"abuse_key"`
+		IPApiKey   string   `json:"ipapi_key"`
+		AbuseCHKey string   `json:"abusech_key"`
+		UseCache   bool     `json:"use_cache"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	if len(req.IOCs) == 0 {
+		writeJSONError(w, "iocs field is required", http.StatusBadRequest)
+		return
+	}
+	if len(req.IOCs) > 100 {
+		req.IOCs = req.IOCs[:100]
+	}
+
+	// Fall back to saved config for any keys not supplied in the request body.
+	if cfg, err := utils.GetAPI(cfgFile); err == nil {
+		if req.VTKey == "" {
+			req.VTKey = cfg.VTAPI
+		}
+		if req.AbuseKey == "" {
+			req.AbuseKey = cfg.AbuseAPI
+		}
+		if req.IPApiKey == "" {
+			req.IPApiKey = cfg.IPapiAPI
+		}
+		if req.AbuseCHKey == "" {
+			req.AbuseCHKey = cfg.AbuseCHAPI
 		}
 	}
 
+	type iocEntry struct {
+		IOC    string          `json:"ioc"`
+		Type   string          `json:"type"`
+		Result json.RawMessage `json:"result,omitempty"`
+		Error  string          `json:"error,omitempty"`
+	}
+
+	results := make([]iocEntry, len(req.IOCs))
+	for i, ioc := range req.IOCs {
+		results[i] = iocEntry{IOC: ioc, Type: string(utils.DetectIOCType(ioc))}
+	}
+
+	ctx := r.Context()
+	processor := utils.NewIPProcessor(req.VTKey, req.AbuseKey, req.IPApiKey, req.AbuseCHKey)
+
+	// Partition indices by IOC type so each pipeline can use its own chunk size.
+	var ipIdxs, hashIdxs []int
+	for i, e := range results {
+		switch e.Type {
+		case string(utils.TypeIP):
+			ipIdxs = append(ipIdxs, i)
+		case string(utils.TypeHash):
+			hashIdxs = append(hashIdxs, i)
+		default:
+			results[i].Error = fmt.Sprintf("%s scanning not yet supported", e.Type)
+		}
+	}
+
+	// Fan-out IPs (chunk 10, 300ms inter-chunk delay).
+	runChunked(ctx, len(ipIdxs), 10, 300*time.Millisecond, func(i int) {
+		idx := ipIdxs[i]
+		raw, err := processor.Lookup(ctx, results[idx].IOC, req.UseCache)
+		if err != nil {
+			results[idx].Error = err.Error()
+			return
+		}
+		results[idx].Result = json.RawMessage(raw)
+	})
+
+	// Fan-out hashes (chunk 5, 500ms inter-chunk delay for VT rate limit).
+	runChunked(ctx, len(hashIdxs), 5, 500*time.Millisecond, func(i int) {
+		idx := hashIdxs[i]
+		raw, err := utils.LookupHash(ctx, results[idx].IOC, req.VTKey, req.AbuseCHKey, req.UseCache)
+		if err != nil {
+			results[idx].Error = err.Error()
+			return
+		}
+		results[idx].Result = json.RawMessage(raw)
+	})
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(results)
+	if err := json.NewEncoder(w).Encode(results); err != nil {
+		log.Printf("serveIOCScan encode: %v", err)
+	}
+}
+
+// serveHealth handles GET /api/health — used by monitoring and Docker healthchecks.
+func serveHealth(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]string{"status": "ok"}); err != nil {
+		log.Printf("serveHealth encode: %v", err)
+	}
 }
 
 // serveCacheClear handles POST /api/cache/clear — wipes a specific cache table or all caches.
 func serveCacheClear(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeJSONError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	var req struct {
@@ -309,10 +460,12 @@ func serveCacheClear(w http.ResponseWriter, r *http.Request) {
 
 	cleared := utils.ClearHashCaches(tables)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"cleared": cleared,
 		"tables":  tables,
-	})
+	}); err != nil {
+		log.Printf("serveCacheClear encode: %v", err)
+	}
 }
 
 func init() {

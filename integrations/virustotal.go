@@ -15,6 +15,7 @@
 package integrations
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -185,8 +186,12 @@ type HashVirusTotal struct {
 // ── Fetch functions ───────────────────────────────────────────────────────────
 
 // FetchVTIP queries VirusTotal for an IP address.
-func FetchVTIP(ip, apiKey string) (*VTIPResult, error) {
-	body, err := httpclient.DoGet(vtEndpointIP+ip, map[string]string{"x-apikey": apiKey})
+// ctx is honoured for cancellation — a browser disconnect aborts the call.
+func FetchVTIP(ctx context.Context, ip, apiKey string) (*VTIPResult, error) {
+	if apiKey == "" {
+		return nil, fmt.Errorf("VirusTotal API key not provided")
+	}
+	body, err := httpclient.DoGetCtx(ctx, vtEndpointIP+ip, map[string]string{"x-apikey": apiKey})
 	if err != nil {
 		return nil, fmt.Errorf("VT IP: %w", err)
 	}
@@ -207,11 +212,12 @@ func FetchVTIP(ip, apiKey string) (*VTIPResult, error) {
 }
 
 // FetchVTHash queries VirusTotal for a file hash (MD5, SHA1, or SHA256).
-func FetchVTHash(hash, apiKey string) (*VTFileResponse, error) {
+// ctx is honoured for cancellation.
+func FetchVTHash(ctx context.Context, hash, apiKey string) (*VTFileResponse, error) {
 	if apiKey == "" {
 		return nil, fmt.Errorf("VirusTotal API key not provided")
 	}
-	raw, err := httpclient.DoGet(vtEndpointHash+hash, map[string]string{"x-apikey": apiKey})
+	raw, err := httpclient.DoGetCtx(ctx, vtEndpointHash+hash, map[string]string{"x-apikey": apiKey})
 	if err != nil {
 		return nil, fmt.Errorf("VT hash: %w", err)
 	}

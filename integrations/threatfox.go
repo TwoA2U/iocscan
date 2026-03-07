@@ -10,6 +10,7 @@ package integrations
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -101,14 +102,15 @@ type TFHashResult struct {
 // ── HTTP helper ───────────────────────────────────────────────────────────────
 
 // doTFPost sends a JSON POST to ThreatFox and returns the raw response body.
+// ctx is honoured for cancellation.
 // apiKey may be empty — ThreatFox has a public tier that works without auth.
-func doTFPost(payload interface{}, apiKey string) ([]byte, error) {
+func doTFPost(ctx context.Context, payload interface{}, apiKey string) ([]byte, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("threatfox marshal: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, tfEndpoint, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tfEndpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("threatfox request: %w", err)
 	}
@@ -137,8 +139,9 @@ func doTFPost(payload interface{}, apiKey string) ([]byte, error) {
 // ── IP lookup ─────────────────────────────────────────────────────────────────
 
 // FetchTFIP queries ThreatFox for an IP indicator.
-func FetchTFIP(ip, apiKey string) (*TFIPResult, error) {
-	raw, err := doTFPost(map[string]string{
+// ctx is honoured for cancellation.
+func FetchTFIP(ctx context.Context, ip, apiKey string) (*TFIPResult, error) {
+	raw, err := doTFPost(ctx, map[string]string{
 		"query":       "search_ioc",
 		"search_term": ip,
 	}, apiKey)
@@ -188,8 +191,9 @@ func parseTFIPResult(resp tfResponse) *TFIPResult {
 // ── Hash lookup ───────────────────────────────────────────────────────────────
 
 // FetchTFHash queries ThreatFox for a file hash.
-func FetchTFHash(hash, apiKey string) (*TFHashResult, error) {
-	raw, err := doTFPost(map[string]string{
+// ctx is honoured for cancellation.
+func FetchTFHash(ctx context.Context, hash, apiKey string) (*TFHashResult, error) {
+	raw, err := doTFPost(ctx, map[string]string{
 		"query": "search_hash",
 		"hash":  hash,
 	}, apiKey)

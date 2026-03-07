@@ -7,6 +7,7 @@
 package integrations
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -36,13 +37,14 @@ type IPAPIResponse struct {
 
 // FetchIPAPI queries ipapi.is for geo and ASN data about an IP address.
 // apiKey is optional — leave empty to use the free public tier.
-func FetchIPAPI(ip, apiKey string) (*IPAPIResponse, error) {
+// ctx is honoured for cancellation.
+func FetchIPAPI(ctx context.Context, ip, apiKey string) (*IPAPIResponse, error) {
 	reqURL := fmt.Sprintf("%s/?q=%s", ipapiEndpoint, url.QueryEscape(ip))
 	if apiKey != "" {
 		reqURL += "&key=" + url.QueryEscape(apiKey)
 	}
 
-	body, err := httpclient.DoGet(reqURL, nil)
+	body, err := httpclient.DoGetCtx(ctx, reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("ipapi.is: %w", err)
 	}
