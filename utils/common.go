@@ -4,6 +4,7 @@
 //   1. Single shared *sql.DB opened once at InitDB() time — no more open/close per query.
 //   2. hashCacheTables merged into allowedTables — single unified whitelist, no init() coupling.
 //   3. getCacheEntry / putCacheEntry replace the duplicate getCached/getHashCached pairs.
+//   4. Cache TTL is configurable via IOCSCAN_CACHE_TTL_DAYS env var (default: 30 days).
 package utils
 
 import (
@@ -98,7 +99,23 @@ func WriteConf(vtAPI, abuseAPI, ipapiAPI, abuseCHAPI string) {
 
 // ── SQLite cache ──────────────────────────────────────────────────────────────
 
-const cacheMaxAge = 30 * 24 * time.Hour
+// cacheMaxAge is how long a cached result is considered fresh.
+// Override at runtime with IOCSCAN_CACHE_TTL_DAYS (must be a positive integer).
+// Falls back to 30 days if the variable is unset, zero, negative, or non-numeric.
+var cacheMaxAge = func() time.Duration {
+	const defaultDays = 30
+	val := os.Getenv("IOCSCAN_CACHE_TTL_DAYS")
+	if val == "" {
+		return defaultDays * 24 * time.Hour
+	}
+	days := 0
+	if _, err := fmt.Sscanf(val, "%d", &days); err != nil || days <= 0 {
+		fmt.Fprintf(os.Stderr, "warning: IOCSCAN_CACHE_TTL_DAYS=%q is invalid, using default %d days\n", val, defaultDays)
+		return defaultDays * 24 * time.Hour
+	}
+	fmt.Fprintf(os.Stderr, "info: cache TTL set to %d days (IOCSCAN_CACHE_TTL_DAYS)\n", days)
+	return time.Duration(days) * 24 * time.Hour
+}()
 
 // sharedDB is the single long-lived database connection.
 // Protected by dbMu; dbReady flips to true once the connection is established.
@@ -284,7 +301,7 @@ func InitDB() {
 // so a single pair of helpers is sufficient.
 
 // getCacheEntry returns a cached result for the given key and table,
-// or "" if not found, expired (> 30 days old), or the table is not whitelisted.
+// or "" if not found, expired (older than cacheMaxAge), or the table is not whitelisted.
 func getCacheEntry(key, table string) string {
 	if !allowedTables[table] {
 		return ""
