@@ -47,7 +47,7 @@ export default defineComponent({
         <tbody>
           <tr
             v-for="(row, i) in sortedRows"
-            :key="row._ip || row._idx || i"
+            :key="row._ip || row.hash || row._idx || i"
             :class="{ clickable: clickable }"
             @click="clickable && $emit('row-click', row)"
           >

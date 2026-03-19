@@ -7,7 +7,9 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/TwoA2U/iocscan/utils"
 	"github.com/spf13/cobra"
@@ -35,21 +37,22 @@ var ipcCmd = &cobra.Command{
 
 		processor := utils.NewIPProcessor(apis.VTAPI, apis.AbuseAPI, apis.IPapiAPI, apis.AbuseCHAPI)
 
-		fmt.Println("[")
-		for i, ip := range ips {
+		// Collect all results — success and error — into a raw JSON slice so
+		// the final output is always a valid JSON array regardless of failures.
+		entries := make([]string, 0, len(ips))
+		for _, ip := range ips {
 			result, err := processor.Lookup(context.Background(), ip, true)
 			if err != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "  // ⚠️  %s: %v\n", ip, err)
+				// Emit a structured error object so piped tools (jq, etc.) don't break.
+				b, _ := json.Marshal(map[string]string{"ip": ip, "error": err.Error()})
+				entries = append(entries, string(b))
+				fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  %s: %v\n", ip, err)
 				continue
 			}
-			// Add comma separator between items (valid JSON array)
-			if i < len(ips)-1 {
-				fmt.Println(result + ",")
-			} else {
-				fmt.Println(result)
-			}
+			entries = append(entries, result)
 		}
-		fmt.Println("]")
+
+		fmt.Printf("[%s]\n", strings.Join(entries, ","))
 		return nil
 	},
 }

@@ -55,3 +55,103 @@ func FetchIPAPI(ctx context.Context, ip, apiKey string) (*IPAPIResponse, error) 
 	}
 	return &resp, nil
 }
+
+// ── Integration interface implementation ──────────────────────────────────────
+//
+// IPAPIIntegration wraps FetchIPAPI to satisfy the Integration interface.
+// ipapi.is is optional (free tier, no key required).
+// This also surfaces company.type (VPN/datacenter/hosting/isp) which was
+// previously fetched but silently discarded by the old orchestrator.
+
+type IPAPIIntegration struct{}
+
+func (i IPAPIIntegration) Manifest() Manifest {
+	return Manifest{
+		Name:     "ipapi",
+		Label:    "ipapi.is",
+		Icon:     "🌍",
+		Enabled:  true,
+		IOCTypes: []IOCType{IOCTypeIP},
+		Auth: AuthConfig{
+			KeyRef:   "ipapi",
+			Label:    "ipapi.is",
+			Optional: true,
+		},
+		Cache: CacheConfig{
+			Table:    "IPAPIIS_IP",
+			TTLHours: 48,
+		},
+		// ipapi.is does not contribute directly to risk scoring;
+		// it provides geo/ASN context used by the card and table.
+		RiskRules: nil,
+		Card: CardDef{
+			Title:        "🌍 ipapi.is",
+			Order:        3,
+			LinkTemplate: "https://ipapi.is/?q={ioc}",
+			LinkLabel:    "↗ ipapi.is",
+			Fields: []FieldDef{
+				{Key: "country", Label: "Country", Type: FieldTypeString},
+				{Key: "city", Label: "City", Type: FieldTypeString},
+				{Key: "state", Label: "State", Type: FieldTypeString},
+				{Key: "timezone", Label: "Timezone", Type: FieldTypeString},
+				{Key: "org", Label: "Organisation", Type: FieldTypeString},
+				{Key: "companyName", Label: "Company", Type: FieldTypeString},
+				{
+					Key:   "companyType",
+					Label: "Company Type",
+					Type:  FieldTypeBadge,
+					Colors: map[string]string{
+						"hosting":    "#fb923c",
+						"datacenter": "#fb923c",
+						"vpn":        "#f87171",
+						"tor":        "#f87171",
+						"isp":        "#34d399",
+						"business":   "#94a3b8",
+						"education":  "#94a3b8",
+					},
+				},
+			},
+		},
+		TableColumns: []TableColumn{
+			{Key: "country", Label: "Country", DefaultVisible: true},
+			{Key: "city", Label: "City", DefaultVisible: false},
+			{Key: "org", Label: "ASN Org", DefaultVisible: true},
+			{Key: "companyType", Label: "Company Type", DefaultVisible: true},
+		},
+	}
+}
+
+func (i IPAPIIntegration) Run(ctx context.Context, ioc, apiKey string, useCache bool) (*Result, error) {
+	// ipapi.is was previously never cached despite having a table.
+	// This wrapper fixes that bug — results are now read and written correctly.
+	if useCache {
+		if raw := cachedGet(ioc, "IPAPIIS_IP"); raw != "" {
+			var r IPAPIResponse
+			if err := json.Unmarshal([]byte(raw), &r); err == nil {
+				return ipapiToResult(&r), nil
+			}
+		}
+	}
+
+	r, err := FetchIPAPI(ctx, ioc, apiKey)
+	if err != nil {
+		return &Result{Error: err.Error()}, nil
+	}
+
+	if b, e := json.Marshal(r); e == nil {
+		cachedPut(ioc, string(b), "IPAPIIS_IP")
+	}
+	return ipapiToResult(r), nil
+}
+
+func ipapiToResult(r *IPAPIResponse) *Result {
+	return &Result{Fields: map[string]any{
+		"country":     r.Location.Country,
+		"city":        r.Location.City,
+		"state":       r.Location.State,
+		"timezone":    r.Location.Timezone,
+		"org":         r.ASN.Org,
+		"companyName": r.Company.Name,
+		"companyType": r.Company.Type,
+	}}
+}

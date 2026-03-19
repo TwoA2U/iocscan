@@ -26,17 +26,25 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"net"
 	"net/http"
 	"path/filepath"
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/TwoA2U/iocscan/integrations"
 	"github.com/TwoA2U/iocscan/utils"
 	"github.com/spf13/cobra"
 	"golang.org/x/time/rate"
 )
+
+// maxRequestBody caps inbound scan request bodies at 1 MB.
+// Prevents unbounded memory allocation from oversized POST bodies
+// before JSON decoding starts.
+const maxRequestBody = 1 << 20 // 1 MB
 
 // embeddedFS holds the compiled-in web/ directory, set by main.go via SetEmbeddedUI.
 var embeddedFS fs.FS
@@ -46,18 +54,56 @@ func SetEmbeddedUI(f fs.FS) {
 	embeddedFS = f
 }
 
-// ── Rate limiter ──────────────────────────────────────────────────────────────
+// ── Per-IP rate limiting ──────────────────────────────────────────────────────
 //
-// scanLimiter caps how many scan requests the server accepts per second.
-// Burst of 5 allows short interactive bursts; sustained rate of 2 req/s is
-// generous for single-user use while preventing runaway scripted abuse.
-var scanLimiter = rate.NewLimiter(rate.Every(500*time.Millisecond), 5)
+// Each remote IP gets its own token-bucket limiter (5 req burst, 1 req/500ms).
+// A background goroutine prunes entries idle for more than 5 minutes so the
+// map doesn't grow unbounded on a busy server.
 
-// rateLimit is a thin middleware wrapper that returns HTTP 429 when the token
-// bucket is empty.
+type ipLimiterEntry struct {
+	limiter  *rate.Limiter
+	lastSeen atomic.Int64 // unix nanoseconds; updated on every request
+}
+
+var (
+	ipLimiters  sync.Map // map[string]*ipLimiterEntry
+	limiterOnce sync.Once
+)
+
+func getLimiter(ip string) *rate.Limiter {
+	limiterOnce.Do(func() {
+		go func() {
+			for range time.Tick(5 * time.Minute) {
+				cutoff := time.Now().Add(-5 * time.Minute).UnixNano()
+				ipLimiters.Range(func(k, v any) bool {
+					if v.(*ipLimiterEntry).lastSeen.Load() < cutoff {
+						ipLimiters.Delete(k)
+					}
+					return true
+				})
+			}
+		}()
+	})
+
+	e := &ipLimiterEntry{
+		limiter: rate.NewLimiter(rate.Every(500*time.Millisecond), 5),
+	}
+	e.lastSeen.Store(time.Now().UnixNano())
+	v, _ := ipLimiters.LoadOrStore(ip, e)
+	entry := v.(*ipLimiterEntry)
+	entry.lastSeen.Store(time.Now().UnixNano())
+	return entry.limiter
+}
+
+// rateLimit is a thin middleware wrapper that enforces per-IP rate limiting.
+// Returns HTTP 429 when the caller's token bucket is empty.
 func rateLimit(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !scanLimiter.Allow() {
+		ip, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			ip = r.RemoteAddr // fallback: use raw value if no port present
+		}
+		if !getLimiter(ip).Allow() {
 			w.Header().Set("Content-Type", "application/json")
 			http.Error(w, `{"error":"rate limit exceeded — please slow down"}`, http.StatusTooManyRequests)
 			return
@@ -109,11 +155,17 @@ var webCmd = &cobra.Command{
 		port, _ := cmd.Flags().GetInt("port")
 		addr := fmt.Sprintf(":%d", port)
 
+		// Initialise the cache DB and wire the cache bridge so integration
+		// Run() methods can read/write SQLite. Safe to call even if already
+		// initialised — InitDB is idempotent for the table creation step.
+		utils.InitDB()
+
 		// Use a dedicated mux so we don't pollute the global default mux.
 		// API routes are registered before the catch-all UI handler so that
 		// /api/* paths are never accidentally served the HTML app.
 		mux := http.NewServeMux()
 		mux.HandleFunc("/api/health", serveHealth)
+		mux.HandleFunc("/api/integrations", serveIntegrations)
 		mux.HandleFunc("/api/scan", rateLimit(serveScan))
 		mux.HandleFunc("/api/scan/hash", rateLimit(serveHashScan))
 		mux.HandleFunc("/api/scan/ioc", rateLimit(serveIOCScan))
@@ -128,8 +180,33 @@ var webCmd = &cobra.Command{
 // serveHealth handles GET /api/health — returns a minimal JSON payload that
 // load balancers and monitoring tools can poll to confirm the server is up.
 func serveHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(`{"status":"ok","service":"iocscan"}`))
+}
+
+// serveIntegrations handles GET /api/integrations.
+// Returns the full Manifest slice for every registered integration as JSON.
+// The Vue frontend fetches this once at boot time (useIntegrations.js) and
+// uses it to render cards, table columns, settings inputs, and risk colors
+// without any hardcoded vendor names in JavaScript.
+func serveIntegrations(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Content-Type", "application/json")
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	// Cache for 60 seconds — manifests are static after startup so the
+	// browser doesn't need to refetch on every page load, but a short TTL
+	// means a server restart is reflected quickly.
+	w.Header().Set("Cache-Control", "public, max-age=60")
+	if err := json.NewEncoder(w).Encode(integrations.Manifests()); err != nil {
+		http.Error(w, `{"error":"failed to serialize integrations"}`, http.StatusInternalServerError)
+	}
 }
 
 // serveUI serves the full web/ directory tree (index.html + JS modules + assets).
@@ -180,6 +257,28 @@ type scanRequest struct {
 	UseCache   bool   `json:"use_cache"`
 }
 
+// loadAPIKeys reads saved API keys from the config file and fills any
+// empty slots in the provided key strings. Returns the filled values.
+// Eliminates the ~15-line duplication previously repeated in each handler.
+func loadAPIKeys(vtKey, abuseKey, ipapiKey, abusechKey string) (vt, abuse, ipapi, abusech string) {
+	vt, abuse, ipapi, abusech = vtKey, abuseKey, ipapiKey, abusechKey
+	if cfg, err := utils.GetAPI(cfgFile); err == nil {
+		if vt == "" {
+			vt = cfg.VTAPI
+		}
+		if abuse == "" {
+			abuse = cfg.AbuseAPI
+		}
+		if ipapi == "" {
+			ipapi = cfg.IPapiAPI
+		}
+		if abusech == "" {
+			abusech = cfg.AbuseCHAPI
+		}
+	}
+	return
+}
+
 // serveScan runs IP enrichment for every IP in the request and returns a JSON array.
 func serveScan(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -187,6 +286,7 @@ func serveScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 	var req scanRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
@@ -198,20 +298,8 @@ func serveScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fall back to saved config for any keys not supplied in the request body.
-	if cfg, err := utils.GetAPI(cfgFile); err == nil {
-		if req.VTKey == "" {
-			req.VTKey = cfg.VTAPI
-		}
-		if req.AbuseKey == "" {
-			req.AbuseKey = cfg.AbuseAPI
-		}
-		if req.IPApiKey == "" {
-			req.IPApiKey = cfg.IPapiAPI
-		}
-		if req.AbuseCHKey == "" {
-			req.AbuseCHKey = cfg.AbuseCHAPI
-		}
-	}
+	req.VTKey, req.AbuseKey, req.IPApiKey, req.AbuseCHKey =
+		loadAPIKeys(req.VTKey, req.AbuseKey, req.IPApiKey, req.AbuseCHKey)
 
 	ips, err := utils.CheckIP(req.IP)
 	if err != nil {
@@ -263,6 +351,7 @@ func serveHashScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 	var req struct {
 		Hashes     []string `json:"hashes"`
 		VTKey      string   `json:"vt_key"`
@@ -282,14 +371,8 @@ func serveHashScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fall back to saved config
-	if cfg, err := utils.GetAPI(cfgFile); err == nil {
-		if req.VTKey == "" {
-			req.VTKey = cfg.VTAPI
-		}
-		if req.AbuseCHKey == "" {
-			req.AbuseCHKey = cfg.AbuseCHAPI
-		}
-	}
+	req.VTKey, _, _, req.AbuseCHKey =
+		loadAPIKeys(req.VTKey, "", "", req.AbuseCHKey)
 
 	type entry struct {
 		Hash   string          `json:"hash"`
@@ -344,6 +427,7 @@ func serveIOCScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 	var req struct {
 		IOCs       []string `json:"iocs"`
 		VTKey      string   `json:"vt_key"`
@@ -365,20 +449,8 @@ func serveIOCScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fall back to saved config for any keys not supplied in the request body.
-	if cfg, err := utils.GetAPI(cfgFile); err == nil {
-		if req.VTKey == "" {
-			req.VTKey = cfg.VTAPI
-		}
-		if req.AbuseKey == "" {
-			req.AbuseKey = cfg.AbuseAPI
-		}
-		if req.IPApiKey == "" {
-			req.IPApiKey = cfg.IPapiAPI
-		}
-		if req.AbuseCHKey == "" {
-			req.AbuseCHKey = cfg.AbuseCHAPI
-		}
-	}
+	req.VTKey, req.AbuseKey, req.IPApiKey, req.AbuseCHKey =
+		loadAPIKeys(req.VTKey, req.AbuseKey, req.IPApiKey, req.AbuseCHKey)
 
 	type iocEntry struct {
 		IOC    string          `json:"ioc"`
@@ -408,27 +480,41 @@ func serveIOCScan(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Fan-out IPs (chunk 10, 300ms inter-chunk delay).
-	runChunked(ctx, len(ipIdxs), 10, 300*time.Millisecond, func(i int) {
-		idx := ipIdxs[i]
-		raw, err := processor.Lookup(ctx, results[idx].IOC, req.UseCache)
-		if err != nil {
-			results[idx].Error = err.Error()
-			return
-		}
-		results[idx].Result = json.RawMessage(raw)
-	})
+	// Fan-out IPs and hashes concurrently — each pipeline uses its own chunk
+	// size and inter-chunk delay, and they write to disjoint index slices so
+	// there are no data races on the results slice.
+	var pipelineWg sync.WaitGroup
+	pipelineWg.Add(2)
 
-	// Fan-out hashes (chunk 5, 500ms inter-chunk delay for VT rate limit).
-	runChunked(ctx, len(hashIdxs), 5, 500*time.Millisecond, func(i int) {
-		idx := hashIdxs[i]
-		raw, err := utils.LookupHash(ctx, results[idx].IOC, req.VTKey, req.AbuseCHKey, req.UseCache)
-		if err != nil {
-			results[idx].Error = err.Error()
-			return
-		}
-		results[idx].Result = json.RawMessage(raw)
-	})
+	go func() {
+		defer pipelineWg.Done()
+		// IPs: chunk 10, 300ms inter-chunk delay.
+		runChunked(ctx, len(ipIdxs), 10, 300*time.Millisecond, func(i int) {
+			idx := ipIdxs[i]
+			raw, err := processor.Lookup(ctx, results[idx].IOC, req.UseCache)
+			if err != nil {
+				results[idx].Error = err.Error()
+				return
+			}
+			results[idx].Result = json.RawMessage(raw)
+		})
+	}()
+
+	go func() {
+		defer pipelineWg.Done()
+		// Hashes: chunk 5, 500ms inter-chunk delay for VT rate limit.
+		runChunked(ctx, len(hashIdxs), 5, 500*time.Millisecond, func(i int) {
+			idx := hashIdxs[i]
+			raw, err := utils.LookupHash(ctx, results[idx].IOC, req.VTKey, req.AbuseCHKey, req.UseCache)
+			if err != nil {
+				results[idx].Error = err.Error()
+				return
+			}
+			results[idx].Result = json.RawMessage(raw)
+		})
+	}()
+
+	pipelineWg.Wait()
 
 	out, err := json.Marshal(results)
 	if err != nil {

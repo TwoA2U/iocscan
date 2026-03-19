@@ -60,7 +60,7 @@ export const HASH_COL_ORDER = [
 
 export const HASH_COL_HIDDEN_DEFAULT = new Set([
     'popularThreatCategories','popularThreatNames','sigmaAnalysisSummary',
-    'sandboxMalwareClassifications','signerDetail','md5','sha1','sha256','rawVT','rawMB',
+    'sandboxMalwareClassifications','signerDetail','md5','sha1','sha256',
 ]);
 
 export const HASH_SECTION_DEFS = [

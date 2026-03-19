@@ -309,3 +309,231 @@ func MapVTHashResult(r *VTFileResponse) (HashVirusTotal, int) {
 
 	return out, sandboxMal
 }
+
+// ── Integration interface implementations ─────────────────────────────────────
+//
+// VirusTotalIP and VirusTotalHash wrap the existing FetchVTIP / FetchVTHash
+// functions to satisfy the Integration interface. All existing logic above
+// is unchanged; these structs are purely additive.
+
+// VirusTotalIP handles VT enrichment for IP address indicators.
+type VirusTotalIP struct{}
+
+func (v VirusTotalIP) Manifest() Manifest {
+	return Manifest{
+		Name:     "virustotal_ip",
+		Label:    "VirusTotal",
+		Icon:     "🦠",
+		Enabled:  true,
+		IOCTypes: []IOCType{IOCTypeIP},
+		Auth: AuthConfig{
+			KeyRef:   "vt",
+			Label:    "VirusTotal",
+			Optional: false,
+		},
+		Cache: CacheConfig{
+			Table:    "VT_IP",
+			TTLHours: 24,
+		},
+		RiskRules: []RiskRule{
+			{
+				Field: "malicious",
+				Type:  RiskThreshold,
+				Thresholds: []RiskThresholdRule{
+					{Gte: 5, Level: "CRITICAL"},
+					{Gte: 2, Level: "HIGH"},
+					{Gte: 1, Level: "MEDIUM"},
+				},
+			},
+		},
+		Card: CardDef{
+			Title:        "🦠 VirusTotal",
+			Order:        1,
+			LinkTemplate: "https://www.virustotal.com/gui/ip-address/{ioc}",
+			LinkLabel:    "↗ VT",
+			Fields: []FieldDef{
+				{
+					Key:   "malicious",
+					Label: "Malicious",
+					Type:  FieldTypeNumber,
+				},
+				{
+					Key:   "suspicious",
+					Label: "Suspicious",
+					Type:  FieldTypeNumber,
+				},
+				{
+					Key:   "harmless",
+					Label: "Harmless",
+					Type:  FieldTypeNumber,
+				},
+				{
+					Key:   "undetected",
+					Label: "Undetected",
+					Type:  FieldTypeNumber,
+				},
+				{
+					Key:   "reputation",
+					Label: "Reputation",
+					Type:  FieldTypeNumber,
+				},
+			},
+		},
+		TableColumns: []TableColumn{
+			{Key: "malicious", Label: "VT Malicious", DefaultVisible: true},
+			{Key: "suspicious", Label: "VT Suspicious", DefaultVisible: true},
+			{Key: "harmless", Label: "VT Harmless", DefaultVisible: false},
+			{Key: "reputation", Label: "VT Reputation", DefaultVisible: false},
+		},
+	}
+}
+
+func (v VirusTotalIP) Run(ctx context.Context, ioc, apiKey string, useCache bool) (*Result, error) {
+	if useCache {
+		if raw := cachedGet(ioc, "VT_IP"); raw != "" {
+			var r VTIPResult
+			if err := json.Unmarshal([]byte(raw), &r); err == nil {
+				return vtIPToResult(&r), nil
+			}
+		}
+	}
+
+	r, err := FetchVTIP(ctx, ioc, apiKey)
+	if err != nil {
+		return &Result{Error: err.Error()}, nil
+	}
+
+	if b, e := json.Marshal(r); e == nil {
+		cachedPut(ioc, string(b), "VT_IP")
+	}
+	return vtIPToResult(r), nil
+}
+
+func vtIPToResult(r *VTIPResult) *Result {
+	return &Result{Fields: map[string]any{
+		"malicious":  r.Malicious,
+		"suspicious": r.Suspicious,
+		"undetected": r.Undetected,
+		"harmless":   r.Harmless,
+		"reputation": r.Reputation,
+	}}
+}
+
+// ── VirusTotalHash ────────────────────────────────────────────────────────────
+
+// VirusTotalHash handles VT enrichment for file hash indicators.
+type VirusTotalHash struct{}
+
+func (v VirusTotalHash) Manifest() Manifest {
+	return Manifest{
+		Name:     "virustotal_hash",
+		Label:    "VirusTotal",
+		Icon:     "🦠",
+		Enabled:  true,
+		IOCTypes: []IOCType{IOCTypeHash},
+		Auth: AuthConfig{
+			KeyRef:   "vt",
+			Label:    "VirusTotal",
+			Optional: false,
+		},
+		Cache: CacheConfig{
+			Table:    "VT_HASH",
+			TTLHours: 24,
+		},
+		RiskRules: []RiskRule{
+			{
+				Field: "malicious",
+				Type:  RiskThreshold,
+				Thresholds: []RiskThresholdRule{
+					{Gte: 15, Level: "CRITICAL"},
+					{Gte: 5, Level: "HIGH"},
+					{Gte: 1, Level: "MEDIUM"},
+				},
+			},
+		},
+		Card: CardDef{
+			Title:        "🦠 VirusTotal",
+			Order:        1,
+			LinkTemplate: "https://www.virustotal.com/gui/file/{ioc}",
+			LinkLabel:    "↗ VT",
+			Fields: []FieldDef{
+				{Key: "malicious", Label: "Malicious", Type: FieldTypeNumber},
+				{Key: "suspicious", Label: "Suspicious", Type: FieldTypeNumber},
+				{Key: "harmless", Label: "Harmless", Type: FieldTypeNumber},
+				{Key: "undetected", Label: "Undetected", Type: FieldTypeNumber},
+				{Key: "reputation", Label: "Reputation", Type: FieldTypeNumber},
+				{Key: "meaningfulName", Label: "File Name", Type: FieldTypeString},
+				{Key: "magic", Label: "Magic", Type: FieldTypeString},
+				{Key: "magika", Label: "Magika", Type: FieldTypeString},
+				{Key: "suggestedThreatLabel", Label: "Threat Label", Type: FieldTypeString},
+				{Key: "popularThreatNames", Label: "Threat Names", Type: FieldTypeTags},
+				{Key: "sandboxMalwareClassifications", Label: "Sandbox Verdicts", Type: FieldTypeTags},
+				{Key: "signatureSigners", Label: "Signer", Type: FieldTypeString},
+				{Key: "md5", Label: "MD5", Type: FieldTypeString},
+				{Key: "sha1", Label: "SHA1", Type: FieldTypeString},
+				{Key: "sha256", Label: "SHA256", Type: FieldTypeString},
+			},
+		},
+		TableColumns: []TableColumn{
+			{Key: "malicious", Label: "VT Malicious", DefaultVisible: true},
+			{Key: "suspicious", Label: "VT Suspicious", DefaultVisible: true},
+			{Key: "suggestedThreatLabel", Label: "Threat Label", DefaultVisible: true},
+			{Key: "meaningfulName", Label: "File Name", DefaultVisible: true},
+			{Key: "magika", Label: "File Type", DefaultVisible: true},
+			{Key: "signatureSigners", Label: "Signer", DefaultVisible: false},
+			{Key: "sha256", Label: "SHA256", DefaultVisible: false},
+		},
+	}
+}
+
+func (v VirusTotalHash) Run(ctx context.Context, ioc, apiKey string, useCache bool) (*Result, error) {
+	if useCache {
+		if raw := cachedGet(ioc, "VT_HASH"); raw != "" {
+			var r VTFileResponse
+			if err := json.Unmarshal([]byte(raw), &r); err == nil {
+				mapped, _ := MapVTHashResult(&r)
+				return vtHashToResult(mapped), nil
+			}
+		}
+	}
+
+	r, err := FetchVTHash(ctx, ioc, apiKey)
+	if err != nil {
+		return &Result{Error: err.Error()}, nil
+	}
+
+	if b, e := json.Marshal(r); e == nil {
+		cachedPut(ioc, string(b), "VT_HASH")
+	}
+	mapped, _ := MapVTHashResult(r)
+	return vtHashToResult(mapped), nil
+}
+
+func vtHashToResult(h HashVirusTotal) *Result {
+	fields := map[string]any{
+		"malicious":                     h.Malicious,
+		"suspicious":                    h.Suspicious,
+		"harmless":                      h.Harmless,
+		"undetected":                    h.Undetected,
+		"reputation":                    h.Reputation,
+		"meaningfulName":                h.MeaningfulName,
+		"magic":                         h.Magic,
+		"magika":                        h.Magika,
+		"suggestedThreatLabel":          h.SuggestedThreatLabel,
+		"popularThreatNames":            h.PopularThreatNames,
+		"popularThreatCategories":       h.PopularThreatCategories,
+		"sandboxMalwareClassifications": h.SandboxMalwareClassifications,
+		"signatureSigners":              h.SignatureSigners,
+		"md5":                           h.MD5,
+		"sha1":                          h.SHA1,
+		"sha256":                        h.SHA256,
+	}
+	if h.SignerDetail != nil {
+		fields["signerStatus"] = h.SignerDetail.Status
+		fields["signerName"] = h.SignerDetail.Name
+		fields["signerCertIssuer"] = h.SignerDetail.CertIssuer
+		fields["signerValidFrom"] = h.SignerDetail.ValidFrom
+		fields["signerValidTo"] = h.SignerDetail.ValidTo
+	}
+	return &Result{Fields: fields}
+}

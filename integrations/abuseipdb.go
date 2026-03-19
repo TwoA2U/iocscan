@@ -117,3 +117,126 @@ func MapAbuseIPResult(r *AbuseIPResult) IPAbuseIPDB {
 		LastReportedAt:  r.LastReportedAt,
 	}
 }
+
+// ── Integration interface implementation ──────────────────────────────────────
+//
+// AbuseIPDBIntegration wraps FetchAbuseIP to satisfy the Integration interface.
+// Named with the "Integration" suffix to avoid colliding with the existing
+// IPAbuseIPDB output type defined above.
+
+type AbuseIPDBIntegration struct{}
+
+func (a AbuseIPDBIntegration) Manifest() Manifest {
+	return Manifest{
+		Name:     "abuseipdb",
+		Label:    "AbuseIPDB",
+		Icon:     "🚨",
+		Enabled:  true,
+		IOCTypes: []IOCType{IOCTypeIP},
+		Auth: AuthConfig{
+			KeyRef:   "abuse",
+			Label:    "AbuseIPDB",
+			Optional: false,
+		},
+		Cache: CacheConfig{
+			Table:    "ABUSE_IP",
+			TTLHours: 12,
+		},
+		RiskRules: []RiskRule{
+			{
+				Field: "confidenceScore",
+				Type:  RiskThreshold,
+				Thresholds: []RiskThresholdRule{
+					{Gte: 75, Level: "CRITICAL"},
+					{Gte: 40, Level: "HIGH"},
+					{Gte: 10, Level: "MEDIUM"},
+					{Gte: 1, Level: "LOW"},
+				},
+			},
+		},
+		Card: CardDef{
+			Title:        "🚨 AbuseIPDB",
+			Order:        2,
+			LinkTemplate: "https://www.abuseipdb.com/check/{ioc}",
+			LinkLabel:    "↗ AbuseIPDB",
+			Fields: []FieldDef{
+				{
+					Key:   "confidenceScore",
+					Label: "Confidence Score",
+					Type:  FieldTypeScoreBar,
+					Thresholds: []ScoreThreshold{
+						{Gte: 75, Color: "#f87171"},
+						{Gte: 40, Color: "#fb923c"},
+						{Gte: 1, Color: "#fbbf24"},
+						{Gte: 0, Color: "#34d399"},
+					},
+				},
+				{Key: "totalReports", Label: "Total Reports", Type: FieldTypeNumber},
+				{Key: "lastReportedAt", Label: "Last Reported", Type: FieldTypeString},
+				{Key: "isp", Label: "ISP", Type: FieldTypeString},
+				{Key: "countryCode", Label: "Country", Type: FieldTypeString},
+				{
+					Key:        "isPublic",
+					Label:      "Public IP",
+					Type:       FieldTypeBool,
+					TrueLabel:  "Yes",
+					FalseLabel: "No",
+					TrueColor:  "#94a3b8",
+					FalseColor: "#34d399",
+				},
+				{
+					Key:        "isWhitelisted",
+					Label:      "Whitelisted",
+					Type:       FieldTypeBool,
+					TrueLabel:  "Yes",
+					FalseLabel: "No",
+					TrueColor:  "#34d399",
+					FalseColor: "#94a3b8",
+				},
+				{Key: "hostnames", Label: "Hostnames", Type: FieldTypeTags},
+			},
+		},
+		TableColumns: []TableColumn{
+			{Key: "confidenceScore", Label: "Abuse %", DefaultVisible: true},
+			{Key: "totalReports", Label: "Reports", DefaultVisible: true},
+			{Key: "lastReportedAt", Label: "Last Reported", DefaultVisible: true},
+			{Key: "isp", Label: "ISP", DefaultVisible: false},
+			{Key: "countryCode", Label: "Country", DefaultVisible: false},
+		},
+	}
+}
+
+func (a AbuseIPDBIntegration) Run(ctx context.Context, ioc, apiKey string, useCache bool) (*Result, error) {
+	if useCache {
+		if raw := cachedGet(ioc, "ABUSE_IP"); raw != "" {
+			var r AbuseIPResult
+			if err := json.Unmarshal([]byte(raw), &r); err == nil {
+				return abuseToResult(&r), nil
+			}
+		}
+	}
+
+	r, err := FetchAbuseIP(ctx, ioc, apiKey)
+	if err != nil {
+		return &Result{Error: err.Error()}, nil
+	}
+
+	if b, e := json.Marshal(r); e == nil {
+		cachedPut(ioc, string(b), "ABUSE_IP")
+	}
+	return abuseToResult(r), nil
+}
+
+func abuseToResult(r *AbuseIPResult) *Result {
+	return &Result{Fields: map[string]any{
+		"ipAddress":       r.IPAddress,
+		"confidenceScore": r.AbuseConfidenceScore,
+		"totalReports":    r.TotalReports,
+		"lastReportedAt":  r.LastReportedAt,
+		"isp":             r.ISP,
+		"countryCode":     r.CountryCode,
+		"isPublic":        r.IsPublic,
+		"isWhitelisted":   r.IsWhitelisted,
+		"hostnames":       r.Hostnames,
+	}}
+}

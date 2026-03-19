@@ -39,7 +39,8 @@ func DoGetCtx(ctx context.Context, rawURL string, headers map[string]string) ([]
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d from %s", resp.StatusCode, rawURL)
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 200))
+		return nil, fmt.Errorf("HTTP %d from %s: %s", resp.StatusCode, rawURL, strings.TrimSpace(string(errBody)))
 	}
 	return io.ReadAll(resp.Body)
 }
@@ -61,7 +62,8 @@ func DoPostCtx(ctx context.Context, rawURL, body string, headers map[string]stri
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d from %s", resp.StatusCode, rawURL)
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 200))
+		return nil, fmt.Errorf("HTTP %d from %s: %s", resp.StatusCode, rawURL, strings.TrimSpace(string(errBody)))
 	}
 	return io.ReadAll(resp.Body)
 }

@@ -5,8 +5,9 @@
 // preserving every element from the original index.html.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import ColumnDrawer from './ColumnDrawer.js';
-import ResultsTable from './ResultsTable.js';
+import ColumnDrawer     from './ColumnDrawer.js';
+import ResultsTable     from './ResultsTable.js';
+import IntegrationCard  from './IntegrationCard.js';
 
 import {
     // State
@@ -48,7 +49,7 @@ const { defineComponent } = Vue;
 
 export default defineComponent({
     name: 'IOCScanner',
-    components: { ColumnDrawer, ResultsTable },
+    components: { ColumnDrawer, ResultsTable, IntegrationCard },
 
     setup() {
         return {

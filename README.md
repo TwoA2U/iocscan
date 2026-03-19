@@ -25,6 +25,7 @@ Query IPs and file hashes against VirusTotal, AbuseIPDB, ThreatFox, ipapi.is, an
 - [Data Sources](#data-sources)
 - [Supported Platforms](#supported-platforms)
 - [Project Structure](#project-structure)
+- [Adding a New Integration](#adding-a-new-integration)
 - [Development](#development)
 - [Contributing](#contributing)
 - [License](#license)
@@ -33,14 +34,16 @@ Query IPs and file hashes against VirusTotal, AbuseIPDB, ThreatFox, ipapi.is, an
 
 ## Features
 
-- **IP enrichment** — geo, ASN, abuse confidence score, VirusTotal verdicts, and ThreatFox C2 intelligence
+- **IP enrichment** — geo, ASN, company type (VPN/datacenter/ISP detection), abuse confidence score, VirusTotal verdicts, and ThreatFox C2 intelligence
 - **Hash enrichment** — VirusTotal detections, MalwareBazaar intel, code signing validation, Sigma rule hits, sandbox classifications
-- **Multi-signal risk scoring** — `riskLevel` is computed from AbuseIPDB score, VT malicious count, and ThreatFox confidence level combined
+- **Multi-signal risk scoring** — `riskLevel` is computed from manifest-driven rules across all integrations; any single signal can escalate the level independently
+- **Plugin architecture** — each integration is a self-contained Go file implementing a single interface; adding a new vendor requires creating one file and registering one line
 - **Web UI** — interactive scanner with cards/table views, column visibility toggles, export to CSV/JSON, scan history
+- **Generic card renderer** — web UI cards are driven by integration manifests served at runtime, not hardcoded per-vendor JavaScript
 - **CLI** — pipe-friendly JSON output for scripting and automation
 - **Bulk scanning** — up to 20 IPs or 100 hashes per request
-- **Local cache** — SQLite-backed caching across all sources (including geo) to avoid redundant API calls and respect rate limits
-- **Rate limiting** — built-in token-bucket limiter protects vendor API quota on the web server
+- **Local cache** — SQLite-backed caching across all sources (including geo, previously uncached) to avoid redundant API calls and respect rate limits
+- **Rate limiting** — built-in token-bucket limiter with 1 MB request body cap protects vendor API quota on the web server
 - **Single binary** — web UI is embedded at compile time, no external files needed
 
 ---
@@ -54,26 +57,26 @@ Query IPs and file hashes against VirusTotal, AbuseIPDB, ThreatFox, ipapi.is, an
   ┌─────────────┐
   │   iocscan   │  CLI or Web UI
   └──────┬──────┘
-         │  concurrent requests
-    ┌────┴──────────────────────────────┐
-    │         │          │              │
-    ▼         ▼          ▼              ▼
- ipapi.is  AbuseIPDB  VirusTotal    ThreatFox
- geo/ASN   abuse      multi-engine  C2/botnet
-           score      verdicts      IOC intel
-                      (IP + hash)   (IP + hash)
-    │         │          │              │
-    └────┬──────────────────────────────┘
-         │  merge + compute riskLevel
-         │  (AbuseIPDB score + VT malicious + ThreatFox confidence)
+         │  registry.ForIOCType() → enabled integrations
+    ┌────┴──────────────────────────────────┐
+    │         │          │                  │
+    ▼         ▼          ▼                  ▼
+ ipapi.is  AbuseIPDB  VirusTotal       ThreatFox
+ geo/ASN   abuse      multi-engine     C2/botnet
+ VPN/DC    score      verdicts         IOC intel
+ detection            (IP + hash)      (IP + hash)
+    │         │          │                  │
+    └────┬──────────────────────────────────┘
+         │  orchestrator collects Results + Errors
+         │  evaluateOverallRisk() reads manifest RiskRules
          ▼
    JSON result (CLI output or Web UI)
          │
          ▼
-   SQLite cache (optional, per-scan)
+   SQLite cache (per-integration table, auto-created)
 ```
 
-All sources are queried concurrently per indicator. Results are merged into a single normalised JSON structure with a computed `riskLevel` (`CLEAN` → `CRITICAL`). Responses are optionally cached in a local SQLite database to avoid burning API quota on repeated lookups.
+All integrations are queried concurrently per indicator via a generic `Scan()` orchestrator. Results are merged into a single normalised JSON structure with a computed `riskLevel` (`CLEAN` → `CRITICAL`). Risk scoring is driven by declarative rules embedded in each integration's manifest — no hardcoded thresholds in the orchestrator. Responses are optionally cached in a local SQLite database; cache tables are created automatically from integration manifests at startup.
 
 ---
 
@@ -117,8 +120,8 @@ iocscan -v <VIRUSTOTAL_KEY> -a <ABUSEIPDB_KEY> -i <IPAPI_KEY> -b <ABUSECH_KEY>
 
 | Flag | Source | Required |
 |------|--------|----------|
-| `-v` | [VirusTotal](https://www.virustotal.com/gui/my-apikey) | Yes (complex mode + hash scans) |
-| `-a` | [AbuseIPDB](https://www.abuseipdb.com/account/api) | Yes (complex mode) |
+| `-v` | [VirusTotal](https://www.virustotal.com/gui/my-apikey) | Yes (IP + hash scans) |
+| `-a` | [AbuseIPDB](https://www.abuseipdb.com/account/api) | Yes (IP scans) |
 | `-i` | [ipapi.is](https://ipapi.is/developers.html) | No — free tier works without a key |
 | `-b` | [abuse.ch](https://bazaar.abuse.ch/api/) | No — used for both MalwareBazaar and ThreatFox |
 
@@ -153,7 +156,7 @@ The web UI is embedded inside the binary — no separate files required. Open yo
 
 | Feature | Description |
 |---------|-------------|
-| Cards view | Per-indicator detail cards with risk badges and source links |
+| Cards view | Per-indicator detail cards with risk badges and source links, rendered generically from integration manifests |
 | Table view | Sortable multi-indicator comparison table |
 | Column toggles | Show/hide individual fields per section |
 | Bulk input | Paste multiple indicators or upload a `.txt` / `.csv` file |
@@ -173,7 +176,28 @@ The web server exposes the following endpoints. All API responses use `Content-T
 Health check endpoint. Returns HTTP 200 when the server is running.
 
 ```json
-{ "status": "ok" }
+{ "status": "ok", "service": "iocscan" }
+```
+
+### `GET /api/integrations`
+
+Returns the full manifest for every registered integration as a JSON array. The Vue frontend fetches this once at boot to drive card layouts, table columns, API key inputs, and risk color thresholds — no hardcoded vendor logic in the browser.
+
+```json
+[
+  {
+    "name": "abuseipdb",
+    "label": "AbuseIPDB",
+    "icon": "🚨",
+    "enabled": true,
+    "iocTypes": ["ip"],
+    "auth": { "keyRef": "abuse", "label": "AbuseIPDB", "optional": false },
+    "cache": { "table": "ABUSE_IP", "ttlHours": 12 },
+    "card": { "title": "🚨 AbuseIPDB", "order": 2, "linkTemplate": "...", "fields": [...] },
+    "tableColumns": [...],
+    "riskRules": [...]
+  }
+]
 ```
 
 ### `POST /api/scan`
@@ -229,7 +253,7 @@ Clear cached results. Pass a specific table name or `"all"` to wipe everything.
 { "table": "all" }
 ```
 
-Valid table names: `VT_IP`, `ABUSE_IP`, `IPAPIIS_IP`, `VT_HASH`, `MB_HASH`, `TF_IP`, `TF_HASH`.
+Cache table names are determined by registered integrations. Current defaults: `VT_IP`, `ABUSE_IP`, `IPAPIIS_IP`, `VT_HASH`, `MB_HASH`, `TF_IP`, `TF_HASH`. New integrations register their own tables automatically.
 
 ### Error responses
 
@@ -285,7 +309,7 @@ iocscan web --port 9090
 
 All CLI commands output a JSON array. Each element contains the queried indicator and its enriched result.
 
-### IP enrichment (complex mode)
+### IP enrichment
 
 ```json
 [
@@ -360,6 +384,10 @@ All CLI commands output a JSON array. Each element contains the queried indicato
          "fileType": "exe",
          "signature": "Sodinokibi",
          "tags": ["revil", "Sodinokibi", "signed"]
+      },
+      "threatfox": {
+         "queryStatus": "ok",
+         "iocs": [{ "malware": "win.sodinokibi", "confidenceLevel": 100 }]
       }
    }
 ]
@@ -369,17 +397,30 @@ All CLI commands output a JSON array. Each element contains the queried indicato
 
 ## Risk Scoring
 
-`riskLevel` is computed from three independent signals. Any single signal is sufficient to escalate the level — a confirmed ThreatFox C2 hit will raise the risk even if AbuseIPDB and VirusTotal show nothing yet.
+`riskLevel` is computed by evaluating declarative `RiskRule` definitions embedded in each integration's manifest. Rules are evaluated after all integrations complete; the highest severity level found across all of them wins.
 
-| Level | AbuseIPDB score | VT malicious engines | ThreatFox confidence |
+Any single signal is sufficient to escalate the level — a confirmed ThreatFox hit raises risk even if AbuseIPDB and VirusTotal show nothing.
+
+### IP scoring
+
+| Level | AbuseIPDB score | VT malicious engines | ThreatFox hit |
 |-------|:-:|:-:|:-:|
-| `CRITICAL` | ≥ 75 | ≥ 5 | ≥ 75 |
-| `HIGH` | ≥ 40 | ≥ 2 | ≥ 50 |
-| `MEDIUM` | ≥ 10 | ≥ 1 | > 0 |
+| `CRITICAL` | ≥ 75 | ≥ 5 | — |
+| `HIGH` | ≥ 40 | ≥ 2 | confirmed (`queryStatus: ok`) |
+| `MEDIUM` | ≥ 10 | ≥ 1 | — |
 | `LOW` | > 0 | — | — |
-| `CLEAN` | 0 | 0 | 0 |
+| `CLEAN` | 0 | 0 | no results |
 
-Thresholds are defined in `utils/iputil.go` (`assessRisk` function) and can be adjusted to suit your environment.
+### Hash scoring
+
+| Level | VT malicious engines | MalwareBazaar | ThreatFox hit |
+|-------|:-:|:-:|:-:|
+| `CRITICAL` | ≥ 15 | — | — |
+| `HIGH` | ≥ 5 | confirmed | confirmed |
+| `MEDIUM` | ≥ 1 | — | — |
+| `CLEAN` | 0 | not found | no results |
+
+Risk rules are declared in each integration's `Manifest.RiskRules` and can be adjusted without touching the orchestrator. See [Adding a New Integration](#adding-a-new-integration) for how to customise thresholds.
 
 ---
 
@@ -387,13 +428,13 @@ Thresholds are defined in `utils/iputil.go` (`assessRisk` function) and can be a
 
 | Source | Used For | Free Tier |
 |--------|----------|-----------|
-| [ipapi.is](https://ipapi.is) | Geo, ASN, datacenter/VPN detection | 1,000 req/day without a key |
+| [ipapi.is](https://ipapi.is) | Geo, ASN, company type (VPN/datacenter/ISP/hosting detection) | 1,000 req/day without a key |
 | [AbuseIPDB](https://www.abuseipdb.com) | Abuse confidence score, report history | 1,000 req/day |
 | [VirusTotal](https://www.virustotal.com) | Multi-engine verdicts for IPs and hashes | 4 req/min, 500 req/day |
 | [MalwareBazaar](https://bazaar.abuse.ch) | Malware sample metadata, tags, signatures | Public API, no hard limit |
 | [ThreatFox](https://threatfox.abuse.ch) | C2/botnet IOC intelligence for IPs and hashes | Public API, no hard limit |
 
-All sources are queried concurrently per indicator. Results are merged and cached locally to minimise repeat API usage. Cache covers all five sources including geo lookups.
+All sources are queried concurrently per indicator. Results are cached locally per integration to minimise repeat API usage. Cache covers all five sources including geo lookups (previously ipapi.is results were never cached — this is now fixed).
 
 ---
 
@@ -413,41 +454,125 @@ Linux and Windows binaries are compressed with UPX. macOS binaries are left unco
 
 ```
 iocscan/
-├── main.go                  — entry point, embeds web/ at compile time
-├── cmd/                     — CLI commands
-│   ├── ipc.go               — ipc subcommand (full IP enrichment)
-│   ├── root.go              — root command, CLI configuration
-│   └── web.go               — web server, HTTP handlers, rate limiting
-├── dist/                    — build artifacts / release output
-├── integrations/            — threat intelligence vendor integrations
-│   ├── abuseipdb.go         — AbuseIPDB API integration
-│   ├── ipapi.go             — IP geolocation lookup (ipapi.is)
-│   ├── malwarebazaar.go     — MalwareBazaar hash lookup
-│   ├── threatfox.go         — ThreatFox IOC lookup (IPs and hashes)
-│   └── virustotal.go        — VirusTotal API integration (IPs and hashes)
+├── main.go                        — entry point, embeds web/ at compile time
+├── cmd/
+│   ├── ipc.go                     — ipc subcommand (full IP enrichment)
+│   ├── root.go                    — root command, CLI configuration
+│   └── web.go                     — web server, HTTP handlers, rate limiting
+├── integrations/
+│   ├── integration.go             — Integration interface, Manifest types, EvaluateRisk()
+│   ├── registry.go                — plugin registry: All(), ForIOCType(), Manifests(), CacheTables()
+│   ├── cache.go                   — cache bridge (RWMutex-protected function variables)
+│   ├── abuseipdb.go               — AbuseIPDB fetch + AbuseIPDBIntegration wrapper
+│   ├── ipapi.go                   — ipapi.is fetch + IPAPIIntegration wrapper
+│   ├── malwarebazaar.go           — MalwareBazaar fetch + MalwareBazaarIntegration wrapper
+│   ├── threatfox.go               — ThreatFox fetch + ThreatFoxIP/HashIntegration wrappers
+│   └── virustotal.go              — VirusTotal fetch + VirusTotalIP/HashIntegration wrappers
 ├── internal/
-│   └── httpclient/          — shared HTTP client with context support
-│       └── http.go
-├── utils/                   — enrichment logic and helpers
-│   ├── common.go            — config, cache helpers, shared types
-│   ├── hashutil.go          — hash enrichment orchestration
-│   ├── iocutil.go           — IOC type detection and validation
-│   └── iputil.go            — IP enrichment orchestration, risk scoring
-└── web/                     — Vue 3 + TailwindCSS web UI
+│   └── httpclient/
+│       └── http.go                — shared HTTP client with context support
+├── utils/
+│   ├── common.go                  — config, dynamic InitDB(), cache helpers, SetCacheFuncs()
+│   ├── orchestrator.go            — generic Scan() fan-out, ScanResult, BuildKeys()
+│   ├── iputil.go                  — IP output types, CheckIP(), assessRisk()
+│   ├── iputil_shim.go             — Lookup() shim → Scan() → ComplexResult (backward compat)
+│   ├── hashutil.go                — hash output types, detectHashType(), assessHashRisk()
+│   ├── hashutil_shim.go           — LookupHash() shim → Scan() → HashResult (backward compat)
+│   └── iocutil.go                 — IOC type detection and validation
+└── web/
     ├── components/
-    │   ├── ColumnDrawer.js  — column visibility drawer
-    │   ├── IOCScanner.js    — main scanner component
-    │   └── ResultsTable.js  — sortable results table
+    │   ├── ColumnDrawer.js        — column visibility drawer
+    │   ├── IntegrationCard.js     — generic card renderer (driven by manifests)
+    │   ├── IOCScanner.js          — main scanner component
+    │   └── ResultsTable.js        — sortable results table
     ├── composables/
     │   ├── useColumnVisibility.js — column toggle state
     │   ├── useHashResults.js      — hash result state and export logic
-    │   ├── useIOCScan.js          — scan submission and polling
+    │   ├── useIntegrations.js     — manifest fetch, ipManifests, hashManifests, auth configs
+    │   ├── useIOCScan.js          — scan submission and state orchestration
     │   ├── useIPResults.js        — IP result state and export logic
     │   ├── useScanHistory.js      — scan history management
     │   └── utils.js               — shared helpers (highlight, download, escapeHTML)
-    ├── index.html           — main UI entry point
-    └── main.js              — Vue app bootstrap
+    ├── index.html                 — main UI entry point
+    └── main.js                    — Vue app bootstrap + loadManifests()
 ```
+
+---
+
+## Adding a New Integration
+
+The plugin architecture means adding a new threat intelligence source touches exactly **two files**:
+
+### Step 1 — Create `integrations/yourvendor.go`
+
+```go
+package integrations
+
+type GreyNoise struct{}
+
+func (g GreyNoise) Manifest() Manifest {
+    return Manifest{
+        Name: "greynoise", Label: "GreyNoise", Icon: "📡",
+        Enabled: true, IOCTypes: []IOCType{IOCTypeIP},
+        Auth:  AuthConfig{KeyRef: "greynoise", Label: "GreyNoise", Optional: true},
+        Cache: CacheConfig{Table: "GN_IP", TTLHours: 24},
+        RiskRules: []RiskRule{{
+            Field: "classification", Type: RiskStringMatch,
+            Matches: []RiskMatchRule{
+                {Match: "malicious",  Level: "HIGH"},
+                {Match: "suspicious", Level: "MEDIUM"},
+            },
+        }},
+        Card: CardDef{
+            Title: "📡 GreyNoise", Order: 5,
+            LinkTemplate: "https://www.greynoise.io/viz/ip/{ioc}",
+            LinkLabel: "↗ GreyNoise",
+            Fields: []FieldDef{
+                {Key: "classification", Label: "Classification", Type: FieldTypeBadge,
+                    Colors: map[string]string{
+                        "malicious": "#f87171", "suspicious": "#fbbf24",
+                        "benign": "#34d399",    "unknown": "#4d6480",
+                    }},
+                {Key: "noise", Label: "Internet Noise", Type: FieldTypeBool,
+                    TrueColor: "#fbbf24", FalseColor: "#34d399"},
+                {Key: "name", Label: "Actor / Service", Type: FieldTypeString},
+            },
+        },
+        TableColumns: []TableColumn{
+            {Key: "classification", Label: "GN Class", DefaultVisible: true},
+            {Key: "noise",          Label: "Noise",     DefaultVisible: true},
+        },
+    }
+}
+
+func (g GreyNoise) Run(ctx context.Context, ioc, apiKey string, useCache bool) (*Result, error) {
+    // 1. check cache: cachedGet(ioc, "GN_IP")
+    // 2. call API:    httpclient.DoGetCtx(ctx, url, headers)
+    // 3. write cache: cachedPut(ioc, data, "GN_IP")
+    // 4. return:      &Result{Fields: map[string]any{...}}
+}
+```
+
+### Step 2 — Add one line to `integrations/registry.go`
+
+```go
+registry = []Integration{
+    // ... existing integrations ...
+    &GreyNoise{}, // ← this line
+}
+```
+
+**That's it.** The following all happen automatically on next startup:
+
+- `GN_IP` SQLite cache table created by `InitDB()`
+- `allowedTables` whitelist updated
+- `GET /api/integrations` response includes the GreyNoise manifest
+- Web UI shows a GreyNoise card with classification badge and noise/riot bools
+- Table gets `GN Class` and `Noise` columns with correct visibility defaults
+- GreyNoise API key input appears in ScanSettings
+- Risk scoring applies `classification = "malicious"` → `HIGH` rule automatically
+
+**Files changed: 2. Files created: 1.**
 
 ---
 
@@ -479,7 +604,10 @@ During development, `iocscan web` reads `web/index.html` directly from disk — 
 
 ```bash
 curl http://localhost:8080/api/health
-# {"status":"ok"}
+# {"status":"ok","service":"iocscan"}
+
+curl http://localhost:8080/api/integrations
+# [...] — full manifest array for all registered integrations
 ```
 
 ### Dry-run release build
@@ -495,8 +623,8 @@ Binaries land in `dist/` for inspection.
 ### Tag and publish a release
 
 ```bash
-git tag -a v1.0.0 -m "v1.0.0"
-git push origin v1.0.0
+git tag -a v1.1.0 -m "v1.1.0"
+git push origin v1.1.0
 ```
 
 GitHub Actions picks up the tag and runs GoReleaser automatically.
@@ -514,7 +642,7 @@ Contributions are welcome. Please follow these steps:
 
 2. **Commit** using conventional commit messages:
    ```
-   feat: add new threat intel source
+   feat: add GreyNoise integration
    fix: handle nil pointer in hash enrichment
    docs: update CLI reference
    ```
@@ -529,10 +657,10 @@ Contributions are welcome. Please follow these steps:
 
 ### Good areas to contribute
 
-- New threat intelligence sources (Shodan, GreyNoise, OTX, Censys)
+- New threat intelligence integrations (GreyNoise, Shodan, OTX, Censys, URLHaus) — see [Adding a New Integration](#adding-a-new-integration)
 - CLI output improvements (colour, table formatting)
 - Web UI features or bug fixes
-- Performance improvements to concurrent enrichment
+- Additional IOC types (domains, URLs) — `iocutil.go` already detects them, enrichment pipelines are not yet wired
 - Additional hash type support
 
 ### Please avoid
@@ -540,6 +668,7 @@ Contributions are welcome. Please follow these steps:
 - Breaking existing API endpoints or CLI flags
 - Hard-coded credentials of any kind
 - Changes that require CGO (the project targets CGO-free static builds)
+- Modifying the orchestrator or common.go to hardcode a new vendor — use the integration interface instead
 
 ---
 

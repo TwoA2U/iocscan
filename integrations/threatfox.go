@@ -232,3 +232,215 @@ func parseTFHashResult(resp tfResponse) *TFHashResult {
 	}
 	return result
 }
+
+// ── Integration interface implementations ─────────────────────────────────────
+//
+// ThreatFoxIPIntegration and ThreatFoxHashIntegration wrap FetchTFIP / FetchTFHash.
+// ThreatFox has a public tier — apiKey is optional.
+
+type ThreatFoxIPIntegration struct{}
+
+func (t ThreatFoxIPIntegration) Manifest() Manifest {
+	return Manifest{
+		Name:     "threatfox_ip",
+		Label:    "ThreatFox",
+		Icon:     "🕷️",
+		Enabled:  true,
+		IOCTypes: []IOCType{IOCTypeIP},
+		Auth: AuthConfig{
+			KeyRef:   "abusech",
+			Label:    "abuse.ch (ThreatFox / MalwareBazaar)",
+			Optional: true,
+		},
+		Cache: CacheConfig{
+			Table:    "TF_IP",
+			TTLHours: 24,
+		},
+		RiskRules: []RiskRule{
+			{
+				// Any confirmed ThreatFox hit elevates risk.
+				// queryStatus == "ok" means the IP is a known IOC.
+				Field: "queryStatus",
+				Type:  RiskStringMatch,
+				Matches: []RiskMatchRule{
+					{Match: "ok", Level: "HIGH"},
+				},
+			},
+		},
+		Card: CardDef{
+			Title:        "🕷️ ThreatFox",
+			Order:        4,
+			LinkTemplate: "https://threatfox.abuse.ch/browse.php?search=ioc%3A{ioc}",
+			LinkLabel:    "↗ ThreatFox",
+			Fields: []FieldDef{
+				{
+					Key:   "queryStatus",
+					Label: "Status",
+					Type:  FieldTypeBadge,
+					Colors: map[string]string{
+						"ok":          "#f87171",
+						"no_results":  "#34d399",
+						"error":       "#fb923c",
+						"parse_error": "#fb923c",
+					},
+				},
+				{Key: "threatType", Label: "Threat Type", Type: FieldTypeString},
+				{Key: "malware", Label: "Malware", Type: FieldTypeString},
+				{Key: "malwareAlias", Label: "Alias", Type: FieldTypeString},
+				{Key: "confidenceLevel", Label: "Confidence", Type: FieldTypeNumber},
+				{Key: "firstSeen", Label: "First Seen", Type: FieldTypeString},
+				{Key: "lastSeen", Label: "Last Seen", Type: FieldTypeString},
+				{Key: "reporter", Label: "Reporter", Type: FieldTypeString},
+				{Key: "tags", Label: "Tags", Type: FieldTypeTags},
+			},
+		},
+		TableColumns: []TableColumn{
+			{Key: "queryStatus", Label: "TF Status", DefaultVisible: true},
+			{Key: "malware", Label: "TF Malware", DefaultVisible: true},
+			{Key: "confidenceLevel", Label: "TF Confidence", DefaultVisible: true},
+			{Key: "firstSeen", Label: "TF First Seen", DefaultVisible: false},
+		},
+	}
+}
+
+func (t ThreatFoxIPIntegration) Run(ctx context.Context, ioc, apiKey string, useCache bool) (*Result, error) {
+	if useCache {
+		if raw := cachedGet(ioc, "TF_IP"); raw != "" {
+			var r TFIPResult
+			if err := json.Unmarshal([]byte(raw), &r); err == nil {
+				return tfIPToResult(&r), nil
+			}
+		}
+	}
+
+	r, err := FetchTFIP(ctx, ioc, apiKey)
+	if err != nil {
+		return &Result{Error: err.Error()}, nil
+	}
+	if r != nil {
+		if b, e := json.Marshal(r); e == nil {
+			cachedPut(ioc, string(b), "TF_IP")
+		}
+	}
+	return tfIPToResult(r), nil
+}
+
+func tfIPToResult(r *TFIPResult) *Result {
+	if r == nil {
+		return &Result{Fields: map[string]any{"queryStatus": "no_results"}}
+	}
+	return &Result{Fields: map[string]any{
+		"queryStatus":     r.QueryStatus,
+		"threatType":      r.ThreatType,
+		"malware":         r.Malware,
+		"malwareAlias":    r.MalwareAlias,
+		"confidenceLevel": r.ConfidenceLevel,
+		"firstSeen":       r.FirstSeen,
+		"lastSeen":        r.LastSeen,
+		"reporter":        r.Reporter,
+		"tags":            r.Tags,
+	}}
+}
+
+// ── ThreatFoxHashIntegration ──────────────────────────────────────────────────
+
+type ThreatFoxHashIntegration struct{}
+
+func (t ThreatFoxHashIntegration) Manifest() Manifest {
+	return Manifest{
+		Name:     "threatfox_hash",
+		Label:    "ThreatFox",
+		Icon:     "🕷️",
+		Enabled:  true,
+		IOCTypes: []IOCType{IOCTypeHash},
+		Auth: AuthConfig{
+			KeyRef:   "abusech",
+			Label:    "abuse.ch (ThreatFox / MalwareBazaar)",
+			Optional: true,
+		},
+		Cache: CacheConfig{
+			Table:    "TF_HASH",
+			TTLHours: 24,
+		},
+		RiskRules: []RiskRule{
+			{
+				Field: "queryStatus",
+				Type:  RiskStringMatch,
+				Matches: []RiskMatchRule{
+					{Match: "ok", Level: "HIGH"},
+				},
+			},
+		},
+		Card: CardDef{
+			Title:        "🕷️ ThreatFox",
+			Order:        3,
+			LinkTemplate: "https://threatfox.abuse.ch/browse.php?search=ioc%3A{ioc}",
+			LinkLabel:    "↗ ThreatFox",
+			Fields: []FieldDef{
+				{
+					Key:   "queryStatus",
+					Label: "Status",
+					Type:  FieldTypeBadge,
+					Colors: map[string]string{
+						"ok":          "#f87171",
+						"no_results":  "#34d399",
+						"error":       "#fb923c",
+						"parse_error": "#fb923c",
+					},
+				},
+				{Key: "iocCount", Label: "Matching IOCs", Type: FieldTypeNumber},
+				{Key: "malware", Label: "Malware", Type: FieldTypeString},
+				{Key: "tags", Label: "Tags", Type: FieldTypeTags},
+			},
+		},
+		TableColumns: []TableColumn{
+			{Key: "queryStatus", Label: "TF Status", DefaultVisible: true},
+			{Key: "malware", Label: "TF Malware", DefaultVisible: true},
+			{Key: "iocCount", Label: "TF IOCs", DefaultVisible: false},
+		},
+	}
+}
+
+func (t ThreatFoxHashIntegration) Run(ctx context.Context, ioc, apiKey string, useCache bool) (*Result, error) {
+	if useCache {
+		if raw := cachedGet(ioc, "TF_HASH"); raw != "" {
+			var r TFHashResult
+			if err := json.Unmarshal([]byte(raw), &r); err == nil {
+				return tfHashToResult(&r), nil
+			}
+		}
+	}
+
+	r, err := FetchTFHash(ctx, ioc, apiKey)
+	if err != nil {
+		return &Result{Error: err.Error()}, nil
+	}
+	if r != nil {
+		if b, e := json.Marshal(r); e == nil {
+			cachedPut(ioc, string(b), "TF_HASH")
+		}
+	}
+	return tfHashToResult(r), nil
+}
+
+func tfHashToResult(r *TFHashResult) *Result {
+	if r == nil {
+		return &Result{Fields: map[string]any{"queryStatus": "no_results"}}
+	}
+
+	fields := map[string]any{
+		"queryStatus": r.QueryStatus,
+		"iocCount":    len(r.IOCs),
+	}
+
+	// Surface the first IOC's malware name and tags as the summary.
+	// The full IOC list is available for detail views if needed.
+	if len(r.IOCs) > 0 {
+		fields["malware"] = r.IOCs[0].Malware
+		if len(r.IOCs[0].Tags) > 0 {
+			fields["tags"] = r.IOCs[0].Tags
+		}
+	}
+
+	return &Result{Fields: fields}
+}
