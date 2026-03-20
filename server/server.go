@@ -42,6 +42,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 
+	"github.com/TwoA2U/iocscan/admin"
 	"github.com/TwoA2U/iocscan/auth"
 	"github.com/TwoA2U/iocscan/integrations"
 	"github.com/TwoA2U/iocscan/utils"
@@ -100,6 +101,19 @@ func Start(port int, cfgFile string, ui fs.FS, db *sql.DB, encKey []byte) {
 		r.Post("/api/scan/hash", rateLimit(serveHashScan))
 		r.Post("/api/scan/ioc", rateLimit(serveIOCScan))
 		r.Post("/api/cache/clear", serveCacheClear)
+
+		// API key management
+		r.Get("/api/keys", serveGetKeys)
+		r.Put("/api/keys", serveSaveKeys)
+
+		// Admin-only routes
+		r.Group(func(r chi.Router) {
+			r.Use(auth.RequireAdmin)
+			r.Get("/api/admin/users", admin.ServeListUsers(globalDB))
+			r.Post("/api/admin/users", admin.ServeCreateUser(globalDB))
+			r.Delete("/api/admin/users/{id}", admin.ServeDeleteUser(globalDB))
+			r.Put("/api/admin/users/{id}/password", admin.ServeResetPassword(globalDB))
+		})
 	})
 
 	// ── Static UI (catch-all — must be last) ─────────────────────────────────
@@ -237,6 +251,48 @@ func webDirs() []string {
 	return candidates
 }
 
+// loadKeys loads the authenticated user's decrypted API keys from the DB.
+// Falls back to the config file for any key not set in the DB.
+// This allows backward compatibility during the transition period.
+func loadKeys(r *http.Request) *auth.APIKeys {
+	user := auth.UserFromContext(r.Context())
+	if user != nil {
+		keys, err := auth.GetKeys(globalDB, user.ID, globalEncKey)
+		if err == nil {
+			// Fill any empty DB keys from config file as fallback.
+			if cfg, cerr := utils.GetAPI(globalCfgFile); cerr == nil {
+				if keys.VTKey == "" {
+					keys.VTKey = cfg.VTAPI
+				}
+				if keys.AbuseKey == "" {
+					keys.AbuseKey = cfg.AbuseAPI
+				}
+				if keys.IPApiKey == "" {
+					keys.IPApiKey = cfg.IPapiAPI
+				}
+				if keys.AbuseCHKey == "" {
+					keys.AbuseCHKey = cfg.AbuseCHAPI
+				}
+				if keys.GreyNoiseKey == "" {
+					keys.GreyNoiseKey = cfg.GreyNoiseAPI
+				}
+			}
+			return keys
+		}
+	}
+	// No session user (shouldn't happen since RequireAuth runs first) —
+	// fall back to config file only.
+	keys := &auth.APIKeys{}
+	if cfg, err := utils.GetAPI(globalCfgFile); err == nil {
+		keys.VTKey = cfg.VTAPI
+		keys.AbuseKey = cfg.AbuseAPI
+		keys.IPApiKey = cfg.IPapiAPI
+		keys.AbuseCHKey = cfg.AbuseCHAPI
+		keys.GreyNoiseKey = cfg.GreyNoiseAPI
+	}
+	return keys
+}
+
 // ── Scan request types ────────────────────────────────────────────────────────
 
 type scanRequest struct {
@@ -262,23 +318,7 @@ func serveScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if cfg, err := utils.GetAPI(globalCfgFile); err == nil {
-		if req.VTKey == "" {
-			req.VTKey = cfg.VTAPI
-		}
-		if req.AbuseKey == "" {
-			req.AbuseKey = cfg.AbuseAPI
-		}
-		if req.IPApiKey == "" {
-			req.IPApiKey = cfg.IPapiAPI
-		}
-		if req.AbuseCHKey == "" {
-			req.AbuseCHKey = cfg.AbuseCHAPI
-		}
-		if req.GreyNoiseKey == "" {
-			req.GreyNoiseKey = cfg.GreyNoiseAPI
-		}
-	}
+	keys := loadKeys(r)
 
 	ips, err := utils.CheckIP(req.IP)
 	if err != nil {
@@ -286,7 +326,7 @@ func serveScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	processor := utils.NewIPProcessor(req.VTKey, req.AbuseKey, req.IPApiKey, req.AbuseCHKey, req.GreyNoiseKey)
+	processor := utils.NewIPProcessor(keys.VTKey, keys.AbuseKey, keys.IPApiKey, keys.AbuseCHKey, keys.GreyNoiseKey)
 
 	type entry struct {
 		IP     string          `json:"ip"`
@@ -333,14 +373,7 @@ func serveHashScan(w http.ResponseWriter, r *http.Request) {
 		req.Hashes = req.Hashes[:100]
 	}
 
-	if cfg, err := utils.GetAPI(globalCfgFile); err == nil {
-		if req.VTKey == "" {
-			req.VTKey = cfg.VTAPI
-		}
-		if req.AbuseCHKey == "" {
-			req.AbuseCHKey = cfg.AbuseCHAPI
-		}
-	}
+	keys := loadKeys(r)
 
 	type entry struct {
 		Hash   string          `json:"hash"`
@@ -355,7 +388,7 @@ func serveHashScan(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	runChunked(ctx, len(req.Hashes), 5, 500*time.Millisecond, func(i int) {
-		raw, err := utils.LookupHash(ctx, req.Hashes[i], req.VTKey, req.AbuseCHKey, req.UseCache)
+		raw, err := utils.LookupHash(ctx, req.Hashes[i], keys.VTKey, keys.AbuseCHKey, req.UseCache)
 		if err != nil {
 			results[i].Error = err.Error()
 			return
@@ -390,23 +423,7 @@ func serveIOCScan(w http.ResponseWriter, r *http.Request) {
 		req.IOCs = req.IOCs[:100]
 	}
 
-	if cfg, err := utils.GetAPI(globalCfgFile); err == nil {
-		if req.VTKey == "" {
-			req.VTKey = cfg.VTAPI
-		}
-		if req.AbuseKey == "" {
-			req.AbuseKey = cfg.AbuseAPI
-		}
-		if req.IPApiKey == "" {
-			req.IPApiKey = cfg.IPapiAPI
-		}
-		if req.AbuseCHKey == "" {
-			req.AbuseCHKey = cfg.AbuseCHAPI
-		}
-		if req.GreyNoiseKey == "" {
-			req.GreyNoiseKey = cfg.GreyNoiseAPI
-		}
-	}
+	keys := loadKeys(r)
 
 	type iocEntry struct {
 		IOC    string          `json:"ioc"`
@@ -421,7 +438,7 @@ func serveIOCScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	processor := utils.NewIPProcessor(req.VTKey, req.AbuseKey, req.IPApiKey, req.AbuseCHKey, req.GreyNoiseKey)
+	processor := utils.NewIPProcessor(keys.VTKey, keys.AbuseKey, keys.IPApiKey, keys.AbuseCHKey, keys.GreyNoiseKey)
 
 	var ipIdxs, hashIdxs, domainIdxs []int
 	for i, e := range results {
@@ -457,7 +474,7 @@ func serveIOCScan(w http.ResponseWriter, r *http.Request) {
 		defer pipelineWg.Done()
 		runChunked(ctx, len(hashIdxs), 5, 500*time.Millisecond, func(i int) {
 			idx := hashIdxs[i]
-			raw, err := utils.LookupHash(ctx, results[idx].IOC, req.VTKey, req.AbuseCHKey, req.UseCache)
+			raw, err := utils.LookupHash(ctx, results[idx].IOC, keys.VTKey, keys.AbuseCHKey, req.UseCache)
 			if err != nil {
 				results[idx].Error = err.Error()
 				return
@@ -499,6 +516,47 @@ func serveCacheClear(w http.ResponseWriter, r *http.Request) {
 		"cleared": cleared,
 		"tables":  tables,
 	})
+}
+
+// serveGetKeys handles GET /api/keys.
+// Returns masked key display values — never exposes plaintext.
+func serveGetKeys(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		jsonError(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	keys, err := auth.GetKeys(globalDB, user.ID, globalEncKey)
+	if err != nil {
+		jsonError(w, "failed to load keys", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, keys.ToMasked())
+}
+
+// serveSaveKeys handles PUT /api/keys.
+// Empty string fields are ignored — only non-empty values are updated.
+func serveSaveKeys(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		jsonError(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req auth.SaveKeysRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := auth.SaveKeys(globalDB, user.ID, globalEncKey, req); err != nil {
+		jsonError(w, "failed to save keys", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]bool{"ok": true})
 }
 
 // ── Response helpers ──────────────────────────────────────────────────────────
