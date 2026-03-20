@@ -37,7 +37,14 @@ type abuseAPIResponse struct {
 		ISP                  string   `json:"isp"`
 		Hostnames            []string `json:"hostnames"`
 		TotalReports         int      `json:"totalReports"`
+		NumDistinctUsers     int      `json:"numDistinctUsers"`
 		LastReportedAt       string   `json:"lastReportedAt"`
+		UsageType            string   `json:"usageType"`
+		Domain               string   `json:"domain"`
+		IsTor                bool     `json:"isTor"`
+		Reports              []struct {
+			Categories []int `json:"categories"`
+		} `json:"reports"`
 	} `json:"data"`
 }
 
@@ -54,7 +61,12 @@ type AbuseIPResult struct {
 	ISP                  string   `json:"isp"`
 	Hostnames            []string `json:"hostnames"`
 	TotalReports         int      `json:"totalReports"`
+	NumDistinctUsers     int      `json:"numDistinctUsers"`
 	LastReportedAt       string   `json:"lastReportedAt"`
+	UsageType            string   `json:"usageType,omitempty"`
+	Domain               string   `json:"domain,omitempty"`
+	IsTor                bool     `json:"isTor"`
+	Categories           []string `json:"categories,omitempty"`
 }
 
 // IPAbuseIPDB holds the AbuseIPDB enrichment fields surfaced in an IP scan result.
@@ -62,10 +74,69 @@ type AbuseIPResult struct {
 // This allows the orchestrator to return partial results instead of aborting the
 // entire scan when one vendor is unavailable.
 type IPAbuseIPDB struct {
-	ConfidenceScore int    `json:"confidenceScore"`
-	TotalReports    int    `json:"totalReports"`
-	LastReportedAt  string `json:"lastReportedAt,omitempty"`
-	Error           string `json:"error,omitempty"`
+	ConfidenceScore  int      `json:"confidenceScore"`
+	TotalReports     int      `json:"totalReports"`
+	NumDistinctUsers int      `json:"numDistinctUsers"`
+	LastReportedAt   string   `json:"lastReportedAt,omitempty"`
+	UsageType        string   `json:"usageType,omitempty"`
+	Domain           string   `json:"domain,omitempty"`
+	IsTor            bool     `json:"isTor"`
+	IsPublic         bool     `json:"isPublic"`
+	IsWhitelisted    bool     `json:"isWhitelisted"`
+	Hostnames        []string `json:"hostnames,omitempty"`
+	Categories       []string `json:"categories,omitempty"`
+	Error            string   `json:"error,omitempty"`
+}
+
+// abuseCategories maps AbuseIPDB category IDs to human-readable names.
+// Source: https://www.abuseipdb.com/categories
+var abuseCategories = map[int]string{
+	1:  "DNS Compromise",
+	2:  "DNS Poisoning",
+	3:  "Fraud Orders",
+	4:  "DDoS Attack",
+	5:  "FTP Brute-Force",
+	6:  "Ping of Death",
+	7:  "Phishing",
+	8:  "Fraud VoIP",
+	9:  "Open Proxy",
+	10: "Web Spam",
+	11: "Email Spam",
+	12: "Blog Spam",
+	13: "VPN IP",
+	14: "Port Scan",
+	15: "Hacking",
+	16: "SQL Injection",
+	17: "Spoofing",
+	18: "Brute-Force",
+	19: "Bad Web Bot",
+	20: "Exploited Host",
+	21: "Web App Attack",
+	22: "SSH",
+	23: "IoT Targeted",
+}
+
+// resolveCategories deduplicates category IDs across all reports and
+// returns a sorted slice of human-readable category names.
+func resolveCategories(reports []struct {
+	Categories []int `json:"categories"`
+}) []string {
+	seen := make(map[int]bool)
+	for _, r := range reports {
+		for _, id := range r.Categories {
+			seen[id] = true
+		}
+	}
+	names := make([]string, 0, len(seen))
+	// Iterate in ID order for stable output
+	for id := 1; id <= 23; id++ {
+		if seen[id] {
+			if name, ok := abuseCategories[id]; ok {
+				names = append(names, name)
+			}
+		}
+	}
+	return names
 }
 
 // ── Fetch function ────────────────────────────────────────────────────────────
@@ -102,7 +173,12 @@ func FetchAbuseIP(ctx context.Context, ip, apiKey string) (*AbuseIPResult, error
 		ISP:                  resp.Data.ISP,
 		Hostnames:            resp.Data.Hostnames,
 		TotalReports:         resp.Data.TotalReports,
+		NumDistinctUsers:     resp.Data.NumDistinctUsers,
 		LastReportedAt:       resp.Data.LastReportedAt,
+		UsageType:            resp.Data.UsageType,
+		Domain:               resp.Data.Domain,
+		IsTor:                resp.Data.IsTor,
+		Categories:           resolveCategories(resp.Data.Reports),
 	}, nil
 }
 
@@ -112,9 +188,17 @@ func FetchAbuseIP(ctx context.Context, ip, apiKey string) (*AbuseIPResult, error
 // used in IP scan output. Called by the IP enrichment orchestrator.
 func MapAbuseIPResult(r *AbuseIPResult) IPAbuseIPDB {
 	return IPAbuseIPDB{
-		ConfidenceScore: r.AbuseConfidenceScore,
-		TotalReports:    r.TotalReports,
-		LastReportedAt:  r.LastReportedAt,
+		ConfidenceScore:  r.AbuseConfidenceScore,
+		TotalReports:     r.TotalReports,
+		NumDistinctUsers: r.NumDistinctUsers,
+		LastReportedAt:   r.LastReportedAt,
+		UsageType:        r.UsageType,
+		Domain:           r.Domain,
+		IsTor:            r.IsTor,
+		IsPublic:         r.IsPublic,
+		IsWhitelisted:    r.IsWhitelisted,
+		Hostnames:        r.Hostnames,
+		Categories:       r.Categories,
 	}
 }
 
@@ -229,14 +313,19 @@ func (a AbuseIPDBIntegration) Run(ctx context.Context, ioc, apiKey string, useCa
 
 func abuseToResult(r *AbuseIPResult) *Result {
 	return &Result{Fields: map[string]any{
-		"ipAddress":       r.IPAddress,
-		"confidenceScore": r.AbuseConfidenceScore,
-		"totalReports":    r.TotalReports,
-		"lastReportedAt":  r.LastReportedAt,
-		"isp":             r.ISP,
-		"countryCode":     r.CountryCode,
-		"isPublic":        r.IsPublic,
-		"isWhitelisted":   r.IsWhitelisted,
-		"hostnames":       r.Hostnames,
+		"ipAddress":        r.IPAddress,
+		"confidenceScore":  r.AbuseConfidenceScore,
+		"totalReports":     r.TotalReports,
+		"numDistinctUsers": r.NumDistinctUsers,
+		"lastReportedAt":   r.LastReportedAt,
+		"usageType":        r.UsageType,
+		"domain":           r.Domain,
+		"isTor":            r.IsTor,
+		"categories":       r.Categories,
+		"isp":              r.ISP,
+		"countryCode":      r.CountryCode,
+		"isPublic":         r.IsPublic,
+		"isWhitelisted":    r.IsWhitelisted,
+		"hostnames":        r.Hostnames,
 	}}
 }

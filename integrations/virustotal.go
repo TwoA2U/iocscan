@@ -42,7 +42,8 @@ type VTIPResponse struct {
 				Undetected int `json:"undetected"`
 				Harmless   int `json:"harmless"`
 			} `json:"last_analysis_stats"`
-			Reputation int `json:"reputation"`
+			Reputation       int   `json:"reputation"`
+			LastAnalysisDate int64 `json:"last_analysis_date"`
 		} `json:"attributes"`
 	} `json:"data"`
 }
@@ -55,6 +56,8 @@ type VTFileAttr struct {
 	MeaningfulName string `json:"meaningful_name"`
 	Magic          string `json:"magic"`
 	Magika         string `json:"magika"`
+
+	LastAnalysisDate int64 `json:"last_analysis_date"`
 
 	LastAnalysisStats struct {
 		Harmless   int `json:"harmless"`
@@ -114,12 +117,13 @@ type VTFileResponse struct {
 
 // VTIPResult holds the cleaned VT enrichment for an IP address (internal cache type).
 type VTIPResult struct {
-	IPAddress  string `json:"ipAddress"`
-	Malicious  int    `json:"malicious"`
-	Suspicious int    `json:"suspicious"`
-	Undetected int    `json:"undetected"`
-	Harmless   int    `json:"harmless"`
-	Reputation int    `json:"reputation"`
+	IPAddress        string `json:"ipAddress"`
+	Malicious        int    `json:"malicious"`
+	Suspicious       int    `json:"suspicious"`
+	Undetected       int    `json:"undetected"`
+	Harmless         int    `json:"harmless"`
+	Reputation       int    `json:"reputation"`
+	LastAnalysisDate string `json:"lastAnalysisDate,omitempty"`
 }
 
 // IPVirusTotal holds the VirusTotal enrichment fields surfaced in an IP scan result.
@@ -127,12 +131,13 @@ type VTIPResult struct {
 // This allows the orchestrator to return partial results instead of aborting the
 // entire scan when VirusTotal is unavailable (e.g. missing API key, rate limit).
 type IPVirusTotal struct {
-	Malicious  int    `json:"malicious"`
-	Suspicious int    `json:"suspicious"`
-	Undetected int    `json:"undetected"`
-	Harmless   int    `json:"harmless"`
-	Reputation int    `json:"reputation"`
-	Error      string `json:"error,omitempty"`
+	Malicious        int    `json:"malicious"`
+	Suspicious       int    `json:"suspicious"`
+	Undetected       int    `json:"undetected"`
+	Harmless         int    `json:"harmless"`
+	Reputation       int    `json:"reputation"`
+	LastAnalysisDate string `json:"lastAnalysisDate,omitempty"`
+	Error            string `json:"error,omitempty"`
 }
 
 // VTSignerDetail holds code-signing certificate detail for a file hash result.
@@ -163,11 +168,12 @@ type HashVirusTotal struct {
 	Magika         string `json:"magika,omitempty"`
 
 	// Detection stats
-	Malicious  int `json:"malicious"`
-	Suspicious int `json:"suspicious"`
-	Harmless   int `json:"harmless"`
-	Undetected int `json:"undetected"`
-	Reputation int `json:"reputation"`
+	Malicious        int    `json:"malicious"`
+	Suspicious       int    `json:"suspicious"`
+	Harmless         int    `json:"harmless"`
+	Undetected       int    `json:"undetected"`
+	Reputation       int    `json:"reputation"`
+	LastAnalysisDate string `json:"lastAnalysisDate,omitempty"`
 
 	// Threat classification
 	SuggestedThreatLabel    string   `json:"suggestedThreatLabel,omitempty"`
@@ -187,6 +193,14 @@ type HashVirusTotal struct {
 
 // ── Fetch functions ───────────────────────────────────────────────────────────
 
+// epochToDate converts a Unix timestamp to a readable UTC date string.
+func epochToDate(epoch int64) string {
+	if epoch == 0 {
+		return ""
+	}
+	return time.Unix(epoch, 0).UTC().Format("2006-01-02 15:04 UTC")
+}
+
 // FetchVTIP queries VirusTotal for an IP address.
 // ctx is honoured for cancellation — a browser disconnect aborts the call.
 func FetchVTIP(ctx context.Context, ip, apiKey string) (*VTIPResult, error) {
@@ -204,12 +218,13 @@ func FetchVTIP(ctx context.Context, ip, apiKey string) (*VTIPResult, error) {
 	}
 
 	return &VTIPResult{
-		IPAddress:  resp.Data.ID,
-		Malicious:  resp.Data.Attributes.LastAnalysisStats.Malicious,
-		Suspicious: resp.Data.Attributes.LastAnalysisStats.Suspicious,
-		Undetected: resp.Data.Attributes.LastAnalysisStats.Undetected,
-		Harmless:   resp.Data.Attributes.LastAnalysisStats.Harmless,
-		Reputation: resp.Data.Attributes.Reputation,
+		IPAddress:        resp.Data.ID,
+		Malicious:        resp.Data.Attributes.LastAnalysisStats.Malicious,
+		Suspicious:       resp.Data.Attributes.LastAnalysisStats.Suspicious,
+		Undetected:       resp.Data.Attributes.LastAnalysisStats.Undetected,
+		Harmless:         resp.Data.Attributes.LastAnalysisStats.Harmless,
+		Reputation:       resp.Data.Attributes.Reputation,
+		LastAnalysisDate: epochToDate(resp.Data.Attributes.LastAnalysisDate),
 	}, nil
 }
 
@@ -236,11 +251,12 @@ func FetchVTHash(ctx context.Context, hash, apiKey string) (*VTFileResponse, err
 // struct used in IP scan output. Called by the IP enrichment orchestrator.
 func MapVTIPResult(r *VTIPResult) IPVirusTotal {
 	return IPVirusTotal{
-		Malicious:  r.Malicious,
-		Suspicious: r.Suspicious,
-		Undetected: r.Undetected,
-		Harmless:   r.Harmless,
-		Reputation: r.Reputation,
+		Malicious:        r.Malicious,
+		Suspicious:       r.Suspicious,
+		Undetected:       r.Undetected,
+		Harmless:         r.Harmless,
+		Reputation:       r.Reputation,
+		LastAnalysisDate: r.LastAnalysisDate,
 	}
 }
 
@@ -261,6 +277,7 @@ func MapVTHashResult(r *VTFileResponse) (HashVirusTotal, int) {
 		Harmless:             a.LastAnalysisStats.Harmless,
 		Undetected:           a.LastAnalysisStats.Undetected,
 		Reputation:           a.Reputation,
+		LastAnalysisDate:     epochToDate(a.LastAnalysisDate),
 		SuggestedThreatLabel: a.PopularThreatClassification.SuggestedThreatLabel,
 	}
 
@@ -413,11 +430,12 @@ func (v VirusTotalIP) Run(ctx context.Context, ioc, apiKey string, useCache bool
 
 func vtIPToResult(r *VTIPResult) *Result {
 	return &Result{Fields: map[string]any{
-		"malicious":  r.Malicious,
-		"suspicious": r.Suspicious,
-		"undetected": r.Undetected,
-		"harmless":   r.Harmless,
-		"reputation": r.Reputation,
+		"malicious":        r.Malicious,
+		"suspicious":       r.Suspicious,
+		"undetected":       r.Undetected,
+		"harmless":         r.Harmless,
+		"reputation":       r.Reputation,
+		"lastAnalysisDate": r.LastAnalysisDate,
 	}}
 }
 
@@ -518,6 +536,7 @@ func vtHashToResult(h HashVirusTotal) *Result {
 		"harmless":                      h.Harmless,
 		"undetected":                    h.Undetected,
 		"reputation":                    h.Reputation,
+		"lastAnalysisDate":              h.LastAnalysisDate,
 		"meaningfulName":                h.MeaningfulName,
 		"magic":                         h.Magic,
 		"magika":                        h.Magika,

@@ -58,18 +58,21 @@ func buildComplexResult(ip string, sr *ScanResult) ComplexResult {
 			result.Links = newIPLinks(canonical)
 		}
 		result.AbuseIPDB = integrations.IPAbuseIPDB{
-			ConfidenceScore: intField(f, "confidenceScore"),
-			TotalReports:    intField(f, "totalReports"),
-			LastReportedAt:  strField(f, "lastReportedAt"),
+			ConfidenceScore:  intField(f, "confidenceScore"),
+			TotalReports:     intField(f, "totalReports"),
+			NumDistinctUsers: intField(f, "numDistinctUsers"),
+			LastReportedAt:   strField(f, "lastReportedAt"),
+			UsageType:        strField(f, "usageType"),
+			Domain:           strField(f, "domain"),
+			IsTor:            boolField(f, "isTor"),
+			IsPublic:         boolField(f, "isPublic"),
+			IsWhitelisted:    boolField(f, "isWhitelisted"),
+			Hostnames:        toStringSlice(f["hostnames"]),
+			Categories:       toStringSlice(f["categories"]),
 		}
-		// Populate geo from AbuseIPDB fields (ISP, countryCode, hostnames)
+		// Populate geo from AbuseIPDB fields (ISP, countryCode only)
 		result.Geo.ISP = strField(f, "isp")
 		result.Geo.CountryCode = strField(f, "countryCode")
-		result.Geo.IsPublic = boolField(f, "isPublic")
-		result.Geo.IsWhitelisted = boolField(f, "isWhitelisted")
-		if hn, ok := f["hostnames"]; ok {
-			result.Geo.Hostnames = toStringSlice(hn)
-		}
 	} else if errMsg, hasErr := sr.Errors["abuseipdb"]; hasErr {
 		result.AbuseIPDB = integrations.IPAbuseIPDB{Error: errMsg}
 	}
@@ -89,11 +92,12 @@ func buildComplexResult(ip string, sr *ScanResult) ComplexResult {
 	// ── VirusTotal ────────────────────────────────────────────────────────────
 	if f, ok := sr.Results["virustotal_ip"]; ok {
 		result.VirusTotal = integrations.IPVirusTotal{
-			Malicious:  intField(f, "malicious"),
-			Suspicious: intField(f, "suspicious"),
-			Undetected: intField(f, "undetected"),
-			Harmless:   intField(f, "harmless"),
-			Reputation: intField(f, "reputation"),
+			Malicious:        intField(f, "malicious"),
+			Suspicious:       intField(f, "suspicious"),
+			Undetected:       intField(f, "undetected"),
+			Harmless:         intField(f, "harmless"),
+			Reputation:       intField(f, "reputation"),
+			LastAnalysisDate: strField(f, "lastAnalysisDate"),
 		}
 	} else if errMsg, hasErr := sr.Errors["virustotal_ip"]; hasErr {
 		result.VirusTotal = integrations.IPVirusTotal{Error: errMsg}

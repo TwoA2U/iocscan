@@ -39,9 +39,7 @@ export const networkRows = computed(() => {
         ['Country',     g.country || g.countryCode || '—',                    'net-country'],
         ['City',        g.city || '—',                                        'net-city'],
         ['Timezone',    g.timezone || '—',                                    'net-tz'],
-        ['Public',      g.isPublic != null ? yn(g.isPublic) : '—',           'net-public'],
-        ['Whitelisted', g.isWhitelisted != null ? yn(g.isWhitelisted) : '—',  'net-wl'],
-        ['Hostnames',   (g.hostnames && g.hostnames.length) ? g.hostnames.join(', ') : '—', 'net-hostnames'],
+        // Public, Whitelisted, Hostnames moved to AbuseIPDB card — they come from that API
     ].filter(([, v]) => v && v !== '—');
 });
 
@@ -60,9 +58,9 @@ export const TABLE_COLS = [
     { key: 'country',              label: 'Country',        vis: 'field:net-country',   get: d => d.geo?.country || d.geo?.countryCode || '—' },
     { key: 'city',                 label: 'City',           vis: 'field:net-city',      get: d => d.geo?.city || '—' },
     { key: 'timezone',             label: 'Timezone',       vis: 'field:net-tz',        get: d => d.geo?.timezone || '—' },
-    { key: 'isPublic',             label: 'Public',         vis: 'field:net-public',    get: d => d.geo?.isPublic },
-    { key: 'isWhitelisted',        label: 'Whitelisted',    vis: 'field:net-wl',        get: d => d.geo?.isWhitelisted },
-    { key: 'hostnames',            label: 'Hostnames',      vis: 'field:net-hostnames', get: d => d.geo?.hostnames || [] },
+    { key: 'isPublic',             label: 'Public',         vis: 'field:net-public',    get: d => d.abuseipdb?.isPublic },
+    { key: 'isWhitelisted',        label: 'Whitelisted',    vis: 'field:net-wl',        get: d => d.abuseipdb?.isWhitelisted },
+    { key: 'hostnames',            label: 'Hostnames',      vis: 'field:net-hostnames', get: d => d.abuseipdb?.hostnames || [] },
     { key: 'abuseConfidenceScore', label: 'Abuse %',        vis: 'field:ab-score',      get: d => d.abuseipdb?.confidenceScore ?? '—' },
     { key: 'totalReports',         label: 'Reports',        vis: 'field:ab-reports',    get: d => d.abuseipdb?.totalReports ?? '—' },
     { key: 'lastReportedAt',       label: 'Last Reported',  vis: 'field:ab-lastreport', get: d => d.abuseipdb?.lastReportedAt ? d.abuseipdb.lastReportedAt.replace('T', ' ').replace('+00:00', '') : '—' },

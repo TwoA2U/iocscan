@@ -34,12 +34,12 @@ Query indicators against VirusTotal, AbuseIPDB, ThreatFox, ipapi.is, MalwareBaza
 
 ## Features
 
-- **IP enrichment** — geo, ASN, company type (VPN/datacenter/ISP), abuse score, VirusTotal verdicts, ThreatFox C2 intel, and GreyNoise internet-scanner classification
-- **Hash enrichment** — VirusTotal detections, MalwareBazaar metadata, code signing validation, Sigma rule hits, sandbox classifications
-- **Domain enrichment** — VirusTotal multi-engine verdict, registrar, categories, and ThreatFox C2 intelligence
+- **IP enrichment** — geo, ASN, usage type, abuse score, VirusTotal verdicts, ThreatFox C2 intel, and GreyNoise internet-scanner classification. AbuseIPDB fields include confidence score, report count, distinct reporters, usage type, domain, Tor exit node flag, public/whitelisted status, hostnames, and deduplicated report categories mapped to human-readable names
+- **Hash enrichment** — VirusTotal detections (with last scanned timestamp), MalwareBazaar metadata, code signing validation, Sigma rule hits, sandbox classifications
+- **Domain enrichment** — VirusTotal multi-engine verdict, reputation, registrar, creation date, A records, categories, and ThreatFox C2 intelligence
 - **Multi-signal risk scoring** — `riskLevel` computed from manifest-driven rules across all integrations; any single signal can escalate the level independently
 - **Plugin architecture** — each integration is a self-contained Go file implementing a single interface; adding a new vendor requires one file and one registry line
-- **Web UI** — interactive scanner with cards/table views, column visibility toggles, export to CSV/JSON, scan history
+- **Web UI** — Tailwind CSS + Vue 3, cards/table views, column visibility toggles, export to CSV/JSON, scan history. Cards show full vendor data including AbuseIPDB categories, VirusTotal last scanned time, and GreyNoise classification. Cards with API errors are hidden automatically — error detail remains in the raw JSON panel
 - **Bulk scanning** — up to 100 IPs, hashes, or domains per request
 - **Local cache** — SQLite-backed caching per integration to avoid redundant API calls
 - **Rate limiting** — built-in token-bucket limiter with 1 MB request body cap
@@ -130,6 +130,8 @@ Open your browser. The API Keys panel at the top accepts keys for each vendor. K
 | abuse.ch | [bazaar.abuse.ch/api](https://bazaar.abuse.ch/api/) | No — MalwareBazaar + ThreatFox |
 | GreyNoise | [viz.greynoise.io/signup](https://viz.greynoise.io/signup) | No — 10 lookups/day without |
 
+Keys are entered in the API Keys panel in the web UI. They are sent per-scan and never stored on disk.
+
 ### 3. Config file (optional)
 
 Create `~/.iocscan/config.yaml` to set a default port or database path:
@@ -148,13 +150,13 @@ The `-p` flag always overrides the config file port.
 
 ## Web UI
 
-**IP mode** enriches against ipapi.is, AbuseIPDB, VirusTotal, ThreatFox, and GreyNoise.
-**Hash mode** enriches against VirusTotal, MalwareBazaar, and ThreatFox.
-**Domain mode** enriches against VirusTotal and ThreatFox.
+**IP mode** — ipapi.is (geo/ASN) + AbuseIPDB (full report data, categories) + VirusTotal + ThreatFox + GreyNoise.
+**Hash mode** — VirusTotal (with last scanned timestamp) + MalwareBazaar + ThreatFox.
+**Domain mode** — VirusTotal (verdict, registrar, A records, categories) + ThreatFox.
 
 | Feature | Description |
 |---------|-------------|
-| Cards view | Per-indicator detail cards with risk badges and source links |
+| Cards view | Per-indicator detail cards with risk badges and source links. Cards with errors are hidden — data still visible in raw JSON panel |
 | Table view | Sortable multi-indicator comparison table |
 | Column toggles | Show/hide individual fields per section |
 | Bulk input | Paste multiple indicators or upload a `.txt` / `.csv` file |
@@ -240,9 +242,20 @@ Current cache tables: `VT_IP`, `ABUSE_IP`, `IPAPIIS_IP`, `GN_IP`, `VT_HASH`, `MB
 {
   "ipAddress": "45.77.34.87",
   "riskLevel": "CRITICAL",
-  "geo": { "isp": "Vultr", "country": "Singapore", "city": "Singapore" },
-  "virustotal": { "malicious": 5, "suspicious": 1, "reputation": -11 },
-  "abuseipdb": { "confidenceScore": 82, "totalReports": 14 },
+  "geo": { "isp": "Vultr", "country": "Singapore", "city": "Singapore", "timezone": "Asia/Singapore" },
+  "virustotal": {
+    "malicious": 5, "suspicious": 1, "reputation": -11,
+    "lastAnalysisDate": "2026-03-20 06:41 UTC"
+  },
+  "abuseipdb": {
+    "confidenceScore": 82, "totalReports": 14, "numDistinctUsers": 9,
+    "lastReportedAt": "2026-03-19T14:22:00+00:00",
+    "usageType": "Data Center/Web Hosting/Transit",
+    "domain": "vultr.com", "isTor": false,
+    "isPublic": true, "isWhitelisted": false,
+    "hostnames": [],
+    "categories": ["Port Scan", "Hacking", "Brute-Force", "SSH"]
+  },
   "threatfox": { "queryStatus": "ok", "malware": "win.cobalt_strike", "confidenceLevel": 100 },
   "greynoise": { "classification": "malicious", "noise": true, "riot": false, "name": "unknown", "lastSeen": "2026-03-19" }
 }
@@ -310,7 +323,7 @@ Current cache tables: `VT_IP`, `ABUSE_IP`, `IPAPIIS_IP`, `GN_IP`, `VT_HASH`, `MB
 | Source | IOC Types | Free Tier |
 |--------|-----------|----------|
 | [ipapi.is](https://ipapi.is) | IP | 1,000 req/day without a key |
-| [AbuseIPDB](https://www.abuseipdb.com) | IP | 1,000 req/day |
+| [AbuseIPDB](https://www.abuseipdb.com) | IP | 1,000 req/day — verbose mode returns full report list with category IDs |
 | [VirusTotal](https://www.virustotal.com) | IP, Hash, Domain | 4 req/min, 500 req/day |
 | [MalwareBazaar](https://bazaar.abuse.ch) | Hash | No hard limit |
 | [ThreatFox](https://threatfox.abuse.ch) | IP, Hash, Domain | No hard limit |
@@ -611,23 +624,31 @@ Domain integrations do not have this limitation.
 
 **Planned fix:** Remove shims when the frontend migrates to consuming `ScanResult` directly via manifests. Planned alongside the auth system.
 
-### 2. No authentication
+### 2. Error card hiding
+
+Cards that return an error (missing API key, rate limit, network failure) are hidden from the UI to avoid clutter. The raw error message is still present in the JSON panel below the cards for debugging. Cards that return a valid "not found" response (`no_results`, `hash_not_found`) still render — only hard errors are suppressed.
+
+### 3. No authentication
 
 The current release has no user authentication. API keys are entered in the browser per session and are not persisted between sessions. Designed for local or trusted LAN use only.
 
 **Planned fix:** Full auth system — users, `httpOnly` session cookies, server-side AES-256-GCM encrypted API key storage. See `COMBINED_PLAN.md` for details.
 
-### 3. Hardcoded key fields in API request
+### 4. Hardcoded key fields in API request
 
 Each vendor key is a separate named field in the request body (`vt_key`, `abuse_key`, `greynoise_key`, etc.). Adding a new integration that requires a key means adding a new field to the request struct in `server/server.go`.
 
 **Planned fix:** Replace with a generic `"keys": { "keyref": "value" }` map when the auth system is implemented (keys will come from the database, not the request body).
 
-### 4. Domain support is VirusTotal + ThreatFox only
+### 5. AbuseIPDB categories require verbose mode
+
+Category data is only returned when the API is queried with `verbose=true` and `maxAgeInDays` set. iocscan always uses verbose mode. Category IDs are mapped to names using the [official AbuseIPDB category list](https://www.abuseipdb.com/categories) and deduplicated across all reports before display.
+
+### 6. Domain support is VirusTotal + ThreatFox only
 
 Domain scans query VirusTotal and ThreatFox only. Other integrations (AbuseIPDB, GreyNoise, ipapi.is) are IP-only by design. Future domain integrations (WHOIS, passive DNS, URLScan.io) can be added following the standard plugin pattern with no shim required.
 
-### 5. SQLite concurrency
+### 7. SQLite concurrency
 
 The cache database uses SQLite with WAL mode — appropriate for local and small team use. High-concurrency or multi-server deployments should migrate to PostgreSQL.
 

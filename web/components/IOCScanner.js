@@ -5,9 +5,8 @@
 // preserving every element from the original index.html.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import ColumnDrawer     from './ColumnDrawer.js';
-import ResultsTable     from './ResultsTable.js';
-import IntegrationCard  from './IntegrationCard.js';
+import ColumnDrawer from './ColumnDrawer.js';
+import ResultsTable from './ResultsTable.js';
 
 import {
     // State
@@ -35,31 +34,29 @@ import {
     riskDotColor, vtStatPart, abuseColor, formatBytes, toArr, yn,
     openColDrawer, closeColDrawer, toggleHistDrawer,
     clearHistory, reScan,
-    doIPScan, doHashScanAction, doDomainScan,
+    doIPScan, doHashScanAction,
     handleIPFileUpload, handleIPDrop, clearIPBulk,
     handleHashFileUpload, clearHashBulk,
-    handleDomainFileUpload, clearDomainBulk,
-    allDomainResults, activeDomainIdx, activeDomainResult,
-    domainError, isDomainLoading, domainBulkCount,
-    domainInputText, domainUseCache, domainView,
-    domainResultLinks, highlightedDomainJSON,
-    visibleDomainTableCols, sortedDomainRows,
-    domainSortCol, domainSortAsc,
-    sortDomainTable, renderDomainTableCell,
-    copyDomainJSON, exportDomainCSV, exportDomainJSON,
-    setDomainView,
     copyJSON, copyHashJSON,
     toggleCopyMenu, toggleHashCopyMenu,
     copyClipboard, copyHashClipboard,
     exportCSV, exportJSON, exportHashCSV, exportHashJSON,
     sortTable, renderTableCell, sortHashTable, renderHashTableCell,
+    // Domain
+    allDomainResults, activeDomainIdx, activeDomainResult, activeDomainEntry,
+    domainError, isDomainLoading, domainBulkCount, domainInputText, domainUseCache,
+    domainView, domainResultLinks, highlightedDomainJSON,
+    visibleDomainTableCols, sortedDomainRows, domainSortCol, domainSortAsc,
+    sortDomainTable, renderDomainTableCell,
+    copyDomainJSON, exportDomainCSV, exportDomainJSON,
+    doDomainScan, setDomainView, clearDomainBulk, handleDomainFileUpload,
 } from '../composables/useIOCScan.js';
 
 const { defineComponent } = Vue;
 
 export default defineComponent({
     name: 'IOCScanner',
-    components: { ColumnDrawer, ResultsTable, IntegrationCard },
+    components: { ColumnDrawer, ResultsTable },
 
     setup() {
         return {
@@ -87,876 +84,969 @@ export default defineComponent({
             riskDotColor, vtStatPart, abuseColor, formatBytes, toArr, yn,
             openColDrawer, closeColDrawer, toggleHistDrawer,
             clearHistory, reScan,
-            doIPScan, doHashScanAction, doDomainScan,
+            doIPScan, doHashScanAction,
             handleIPFileUpload, handleIPDrop, clearIPBulk,
             handleHashFileUpload, clearHashBulk,
-            handleDomainFileUpload, clearDomainBulk,
-            allDomainResults, activeDomainIdx, activeDomainResult,
-            domainError, isDomainLoading, domainBulkCount,
-            domainInputText, domainUseCache, domainView,
-            domainResultLinks, highlightedDomainJSON,
-            visibleDomainTableCols, sortedDomainRows,
-            domainSortCol, domainSortAsc,
-            sortDomainTable, renderDomainTableCell,
-            copyDomainJSON, exportDomainCSV, exportDomainJSON,
-            setDomainView,
             copyJSON, copyHashJSON,
             toggleCopyMenu, toggleHashCopyMenu,
             copyClipboard, copyHashClipboard,
             exportCSV, exportJSON, exportHashCSV, exportHashJSON,
             sortTable, renderTableCell, sortHashTable, renderHashTableCell,
+            // Domain
+            allDomainResults, activeDomainIdx, activeDomainResult, activeDomainEntry,
+            domainError, isDomainLoading, domainBulkCount, domainInputText, domainUseCache,
+            domainView, domainResultLinks, highlightedDomainJSON,
+            visibleDomainTableCols, sortedDomainRows, domainSortCol, domainSortAsc,
+            sortDomainTable, renderDomainTableCell,
+            copyDomainJSON, exportDomainCSV, exportDomainJSON,
+            doDomainScan, setDomainView, clearDomainBulk, handleDomainFileUpload,
         };
     },
 
     template: `
-  <div :class="['shell', wideShell ? 'wide' : '']" id="shell">
 
-    <!-- ══ HEADER ══════════════════════════════════════════════════════ -->
-    <header class="flex items-end justify-between flex-wrap gap-3 py-8 border-b mb-8" style="border-color:#1e2d42">
-      <!-- Brand -->
-      <div class="flex items-center gap-4">
-        <div class="w-10 h-10 border flex items-center justify-center text-xl" style="border-color:#38bdf8;color:#38bdf8;background:rgba(56,189,248,0.06)">⚡</div>
-        <div>
-          <div class="font-bold text-2xl tracking-tight" style="font-family:'Syne',sans-serif">
-            <span style="color:#e2e8f0">ioc</span><span style="color:#38bdf8">scan</span>
-          </div>
-          <div class="text-xs tracking-widest uppercase" style="color:#4d6480;font-size:0.58rem">Threat Intelligence · IP &amp; Hash Enrichment</div>
-        </div>
-      </div>
+  <!-- ══ TOPBAR ══════════════════════════════════════════════════════ -->
+  <header class="site-header">
 
-      <!-- Right side controls -->
-      <div class="flex items-center gap-3 flex-wrap">
-        <!-- Source badges -->
-        <div class="flex gap-2">
-          <span class="text-xs px-2 py-1 border tracking-widest uppercase" style="font-size:0.56rem;border-color:rgba(56,189,248,0.4);color:#38bdf8">VirusTotal</span>
-          <span class="text-xs px-2 py-1 border tracking-widest uppercase" style="font-size:0.56rem;border-color:rgba(251,146,60,0.4);color:#fb923c">AbuseIPDB</span>
-          <span class="text-xs px-2 py-1 border tracking-widest uppercase" style="font-size:0.56rem;border-color:rgba(52,211,153,0.4);color:#34d399">IPAPI.IS</span>
-          <span class="text-xs px-2 py-1 border tracking-widest uppercase" style="font-size:0.56rem;border-color:rgba(192,132,252,0.4);color:#c084fc">abuse.ch</span>
-          <span class="text-xs px-2 py-1 border tracking-widest uppercase" style="font-size:0.56rem;border-color:rgba(251,191,36,0.4);color:#fbbf24">ThreatFox</span>
-          <span class="text-xs px-2 py-1 border tracking-widest uppercase" style="font-size:0.56rem;border-color:rgba(56,189,248,0.4);color:#38bdf8">GreyNoise</span>
-        </div>
+    <!-- Brand -->
+    <div class="flex items-center gap-3 flex-shrink-0">
+      <span class="font-display font-bold text-xl tracking-tight">
+        <span class="text-t1">ioc</span><span class="text-prime">scan</span>
+      </span>
+      <span class="hidden sm:block text-xs font-medium tracking-widest uppercase text-t3 pl-3 border-l border-white/10">
+        Threat Intelligence
+      </span>
+    </div>
 
-        <!-- History drawer -->
-        <div style="position:relative">
-          <button class="action-btn flex items-center gap-2" @click="toggleHistDrawer">
-            ⏱ HISTORY <span class="text-xs px-1 border" style="border-color:#243550;color:#38bdf8">{{ scanHist.length }}</span>
-          </button>
-          <div class="hist-drawer" :class="{open: histDrawerOpen}">
-            <div class="flex items-center justify-between px-4 py-3 border-b" style="border-color:#1e2d42">
-              <span class="text-xs font-bold tracking-widest uppercase" style="color:#94a3b8">History</span>
-              <div class="flex gap-2">
-                <button class="action-btn text-xs" @click="clearHistory">Clear All</button>
-                <button class="action-btn" @click="toggleHistDrawer">✕</button>
-              </div>
+    <!-- Source badges -->
+    <div class="header-sources flex items-center gap-2 ml-auto">
+      <span class="src-chip" style="color:#22d3ee;border-color:rgba(34,211,238,0.25)">VirusTotal</span>
+      <span class="src-chip" style="color:#fb923c;border-color:rgba(251,146,60,0.25)">AbuseIPDB</span>
+      <span class="src-chip" style="color:#4ade80;border-color:rgba(74,222,128,0.25)">ipapi.is</span>
+      <span class="src-chip" style="color:#c084fc;border-color:rgba(192,132,252,0.25)">abuse.ch</span>
+      <span class="src-chip" style="color:#fcd34d;border-color:rgba(252,211,77,0.25)">ThreatFox</span>
+    </div>
+
+    <!-- Right actions -->
+    <div class="flex items-center gap-2 ml-3">
+
+      <!-- History -->
+      <div style="position:relative">
+        <button class="act-btn" @click="toggleHistDrawer">
+          <span class="opacity-60">⏱</span>
+          History
+          <span class="font-mono text-prime bg-prime/10 border border-prime/20 px-1.5 py-0 rounded text-xs">{{ scanHist.length }}</span>
+        </button>
+        <div class="hist-drawer" :class="{open: histDrawerOpen}">
+          <div class="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+            <span class="text-xs font-bold tracking-widest uppercase text-t2">History</span>
+            <div class="flex gap-2">
+              <button class="act-btn text-xs py-1" @click="clearHistory">Clear</button>
+              <button class="act-btn text-xs py-1 px-2" @click="toggleHistDrawer">✕</button>
             </div>
-            <div class="overflow-y-auto flex-1">
-              <p v-if="!scanHist.length" class="text-center py-6 text-xs" style="color:#2e4060">No scans yet.</p>
-              <div v-for="(h, i) in scanHist" :key="h.ip + i" class="hist-item" @click="reScan(h.ip)">
-                <div class="flex items-center gap-2">
-                  <span class="text-xs" style="color:#2e4060">{{ i+1 }}</span>
-                  <span style="font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:#cbd5e1">{{ h.ip }}</span>
-                  <span v-if="h.scanCount > 1" style="font-size:0.5rem;color:#2e4060;border:1px solid #2e4060;padding:1px 5px;">×{{ h.scanCount }}</span>
-                  <span style="font-size:0.6rem;color:#4d6480">{{ h.scanCount > 1 ? h.lastSeen : h.time }}</span>
-                </div>
-                <span :class="['risk-pill', 'risk-' + h.risk]" style="font-size:0.55rem;padding:2px 7px">{{ h.risk }}</span>
+          </div>
+          <div class="overflow-y-auto flex-1">
+            <p v-if="!scanHist.length" class="text-center py-5 text-t3 text-xs italic">No scans yet</p>
+            <div v-for="(h,i) in scanHist" :key="h.ip+i" class="hist-item" @click="reScan(h.ip)">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="font-mono text-xs text-t1 truncate">{{ h.ip }}</span>
+                <span v-if="h.scanCount>1" class="text-t3 text-xs flex-shrink-0">×{{ h.scanCount }}</span>
               </div>
+              <span :class="['t-risk','risk-'+h.risk]">{{ h.risk }}</span>
             </div>
           </div>
         </div>
-
-        <!-- Column drawer component -->
-        <column-drawer></column-drawer>
       </div>
-    </header>
 
-    <!-- ══ API KEYS ══════════════════════════════════════════════════════ -->
-    <div class="border p-5 mb-6 relative" style="border-color:#1e2d42;background:#0d1320">
-      <span class="absolute -top-2 left-3 px-2 text-xs font-bold tracking-widest uppercase" style="background:#0d1320;color:#4d6480;font-size:0.58rem">API Keys</span>
-      <div class="grid gap-4" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr))">
+      <!-- Columns -->
+      <column-drawer></column-drawer>
+    </div>
+  </header>
+
+  <!-- ══ PAGE BODY ══════════════════════════════════════════════════ -->
+  <div class="px-8 py-8 pb-20" id="shell">
+
+    <!-- API Keys -->
+    <div class="keys-panel">
+      <span class="keys-panel-label">API Keys</span>
+      <div class="grid gap-3" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
         <div>
-          <label class="block text-xs font-bold tracking-widest uppercase mb-2" style="color:#4d6480;font-size:0.58rem">VirusTotal</label>
-          <input type="password" v-model="keys.vt" class="key-input" placeholder="Required for complex mode…">
+          <label class="block text-xs font-semibold tracking-wider uppercase text-t3 mb-1.5">VirusTotal</label>
+          <input type="password" v-model="keys.vt" class="key-input" placeholder="Required for IP, hash, domain…">
         </div>
         <div>
-          <label class="block text-xs font-bold tracking-widest uppercase mb-2" style="color:#4d6480;font-size:0.58rem">AbuseIPDB</label>
-          <input type="password" v-model="keys.abuse" class="key-input" placeholder="Required for complex mode…">
+          <label class="block text-xs font-semibold tracking-wider uppercase text-t3 mb-1.5">AbuseIPDB</label>
+          <input type="password" v-model="keys.abuse" class="key-input" placeholder="Required for IP scans…">
         </div>
         <div>
-          <label class="block text-xs font-bold tracking-widest uppercase mb-2" style="color:#4d6480;font-size:0.58rem">IPAPI.IS <span style="color:#2e4060">(optional)</span></label>
-          <input type="password" v-model="keys.ipapi" class="key-input" placeholder="Leave blank for free tier…">
+          <label class="block text-xs font-semibold tracking-wider uppercase text-t3 mb-1.5">
+            ipapi.is <span class="font-normal normal-case tracking-normal opacity-50">optional</span>
+          </label>
+          <input type="password" v-model="keys.ipapi" class="key-input" placeholder="Free tier works without…">
         </div>
         <div>
-          <label class="block text-xs font-bold tracking-widest uppercase mb-2" style="color:#4d6480;font-size:0.58rem">abuse.ch <span style="color:#2e4060">(optional)</span></label>
-          <input type="password" v-model="keys.abusech" class="key-input" placeholder="Used for MalwareBazaar + ThreatFox…">
+          <label class="block text-xs font-semibold tracking-wider uppercase text-t3 mb-1.5">
+            abuse.ch <span class="font-normal normal-case tracking-normal opacity-50">optional</span>
+          </label>
+          <input type="password" v-model="keys.abusech" class="key-input" placeholder="MalwareBazaar + ThreatFox…">
         </div>
         <div>
-          <label class="block text-xs font-bold tracking-widest uppercase mb-2" style="color:#4d6480;font-size:0.58rem">GreyNoise <span style="color:#2e4060">(optional)</span></label>
-          <input type="password" v-model="keys.greynoise" class="key-input" placeholder="Leave blank for 10 lookups/day…">
+          <label class="block text-xs font-semibold tracking-wider uppercase text-t3 mb-1.5">
+            GreyNoise <span class="font-normal normal-case tracking-normal opacity-50">optional</span>
+          </label>
+          <input type="password" v-model="keys.greynoise" class="key-input" placeholder="10 lookups/day free…">
         </div>
       </div>
     </div>
 
-    <!-- ══ MODE TABS ════════════════════════════════════════════════════ -->
-    <div class="flex border-b mb-6" style="border-color:#1e2d42">
-      <button class="ioc-tab" :class="{active: currentIOCMode==='ip'}"     @click="switchIOCMode('ip')">● IP Address</button>
-      <button class="ioc-tab" :class="{active: currentIOCMode==='hash'}"   @click="switchIOCMode('hash')">● File Hash</button>
-      <button class="ioc-tab" :class="{active: currentIOCMode==='domain'}" @click="switchIOCMode('domain')">● Domain</button>
+    <!-- Mode tabs -->
+    <div class="flex border-b border-white/[0.08] mb-6">
+      <button class="ioc-tab" :class="{active: currentIOCMode==='ip'}"   @click="switchIOCMode('ip')">IP Address</button>
+      <button class="ioc-tab" :class="{active: currentIOCMode==='hash'}"   @click="switchIOCMode('hash')">File Hash</button>
+      <button class="ioc-tab" :class="{active: currentIOCMode==='domain'}" @click="switchIOCMode('domain')">Domain</button>
     </div>
 
-    <!-- ══ IP SCAN SECTION ══════════════════════════════════════════════ -->
+    <!-- ══ IP SECTION ══════════════════════════════════════════════ -->
     <div v-show="currentIOCMode==='ip'">
-      <div class="border p-4 mb-6" style="border-color:#1e2d42;background:#0d1320;border-top:2px solid #0ea5e9">
-        <div class="flex gap-3" style="align-items:stretch">
-          <div class="flex-1 min-w-0 relative" :class="{'drag-over': isDragging}" @dragover.prevent="isDragging=true" @dragleave="isDragging=false" @drop.prevent="handleIPDrop">
-            <textarea id="ipInput" v-model="ipInputText" class="scan-input" rows="2"
-              placeholder="8.8.8.8, 1.1.1.1 — or drag &amp; drop a .txt / .csv file"
-              style="width:100%" @keydown.enter.exact.prevent="doIPScan"></textarea>
+
+      <!-- Scan input -->
+      <div class="scan-panel" :class="{'drag-over': isDragging}"
+           @dragover.prevent="isDragging=true" @dragleave="isDragging=false" @drop.prevent="handleIPDrop">
+        <div class="flex gap-3 items-stretch">
+          <div class="flex-1 min-w-0">
+            <textarea v-model="ipInputText" class="scan-input" rows="2"
+              placeholder="8.8.8.8, 1.1.1.1 — paste IPs or drag a .txt / .csv file"
+              @keydown.enter.exact.prevent="doIPScan"></textarea>
           </div>
-          <div class="flex flex-col gap-2" style="flex-shrink:0">
-            <div class="flex gap-2 items-center">
-              <button class="scan-btn" :disabled="isIPLoading" @click="doIPScan" style="flex:1">SCAN</button>
+          <div class="flex flex-col gap-2 flex-shrink-0 justify-start">
+            <div class="flex items-center gap-2">
+              <button class="scan-btn h-[46px]" :disabled="isIPLoading" @click="doIPScan">SCAN</button>
               <span v-if="isIPLoading" class="loader"></span>
             </div>
           </div>
         </div>
-        <!-- Bulk preview -->
-        <div v-if="ipBulkCount" class="bulk-preview mt-2">
-          <span style="color:#38bdf8">📋</span>
-          <span><span style="color:#cbd5e1;font-weight:600">{{ ipBulkCount }}</span> IPs detected</span>
-          <button class="action-btn" @click="clearIPBulk">✕ Clear</button>
-        </div>
-        <!-- File upload row -->
-        <div class="flex items-center gap-3 mt-3 pt-3 border-t" style="border-color:#1e2d42">
-          <label class="action-btn cursor-pointer">
-            📁 Load File <input type="file" class="hidden" accept=".txt,.csv,.log" @change="handleIPFileUpload">
+        <div class="flex items-center flex-wrap gap-2 mt-3">
+          <div v-if="ipBulkCount" class="flex items-center gap-2 text-t2 text-xs">
+            <span class="font-mono font-bold text-prime">{{ ipBulkCount }}</span> IPs detected
+            <button class="meta-btn" @click="clearIPBulk">✕ Clear</button>
+          </div>
+          <label class="meta-btn cursor-pointer">
+            ↑ Load File
+            <input type="file" class="hidden" accept=".txt,.csv,.log" @change="handleIPFileUpload">
           </label>
-          <div class="flex items-center gap-2" style="cursor:pointer" @click="ipUseCache=!ipUseCache">
-            <button class="tog" :class="{on: ipUseCache}" style="cursor:pointer"></button>
-            <span style="font-size:0.68rem;color:#4d6480;user-select:none">Use Cache</span>
+          <div class="flex items-center gap-2 cursor-pointer ml-auto" @click="ipUseCache=!ipUseCache">
+            <button class="tog" :class="{on: ipUseCache}"></button>
+            <span class="text-xs text-t3 select-none">Cache</span>
           </div>
         </div>
       </div>
 
       <!-- Error -->
-      <div v-if="ipError" class="err-box mb-4">❌ {{ ipError }}</div>
+      <div v-if="ipError" class="err-box animate-fade-up">⚠ {{ ipError }}</div>
 
-      <!-- IP Results -->
-      <div v-if="allResults.length">
-        <!-- View toggle + export bar -->
-        <div id="ip-results-bar" class="flex items-center justify-between flex-wrap gap-3 mb-4">
-          <div class="flex gap-0">
+      <!-- Results -->
+      <div v-if="allResults.length" id="ip-results-bar">
+
+        <!-- Toolbar -->
+        <div class="flex items-center flex-wrap gap-3 mb-5">
+          <div class="view-toggle">
             <button class="view-btn" :class="{active: currentView==='cards'}" @click="setView('cards')">Cards</button>
             <button class="view-btn" :class="{active: currentView==='table'}" @click="setView('table')">Table</button>
           </div>
-          <div class="flex items-center gap-2">
-            <span class="text-xs" style="color:#4d6480;font-size:0.62rem" v-if="currentView==='table'">
-              Showing <span style="color:#cbd5e1">{{ allResults.filter(e=>e.result).length }}</span> IPs
-            </span>
-            <div class="copy-split">
-              <button class="export-btn copy-main" @click="toggleCopyMenu">⎘ Copy</button>
-              <button class="export-btn copy-arrow" @click="toggleCopyMenu">▾</button>
+          <div class="flex items-center gap-2 ml-auto">
+            <div class="copy-split copy-menu-w">
+              <button class="act-btn copy-main" @click="toggleCopyMenu">⎘ Copy</button>
+              <button class="act-btn copy-arr" @click="toggleCopyMenu">▾</button>
               <div class="copy-menu" :class="{open: copyMenuOpen}" @mouseleave="copyMenuOpen=false">
                 <div class="copy-menu-item" @click="copyClipboard('json')">Copy as JSON</div>
                 <div class="copy-menu-item" @click="copyClipboard('csv')">Copy as CSV</div>
                 <div class="copy-menu-item" @click="copyClipboard('ips')">Copy IPs only</div>
               </div>
             </div>
-            <button class="export-btn" @click="exportCSV">↓ CSV</button>
-            <button class="export-btn" @click="exportJSON">↓ JSON</button>
+            <button class="act-btn" @click="exportCSV">↓ CSV</button>
+            <button class="act-btn" @click="exportJSON">↓ JSON</button>
           </div>
         </div>
 
-        <!-- IP chip tabs (multi-IP, cards view only) -->
-        <div v-if="allResults.length > 1 && currentView==='cards'" class="flex flex-wrap gap-1 mb-4">
-          <div v-for="(r, i) in allResults" :key="r.ip" class="ip-tab" :class="{active: i===activeIdx}" @click="switchTab(i)">
+        <!-- IP chip tabs -->
+        <div v-if="allResults.length > 1 && currentView==='cards'" class="flex flex-wrap gap-2 mb-5">
+          <div v-for="(r,i) in allResults" :key="r.ip"
+               class="ip-tab" :class="{active: i===activeIdx}" @click="switchTab(i)">
             <span class="ip-tab-dot" :style="{background: riskDotColor(r.result ? r.result.riskLevel : null)}"></span>
             {{ r.ip }}
           </div>
         </div>
 
-        <!-- Cards view -->
-        <div v-show="currentView==='cards'" id="cardsView">
+        <!-- ── CARDS VIEW ── -->
+        <div v-show="currentView==='cards'">
           <div v-if="activeResult">
-            <!-- Risk pill -->
-            <div v-if="colVisible.risk" class="mb-4">
-              <span :class="['risk-pill', 'risk-' + (activeResult.riskLevel||'CLEAN')]">{{ activeResult.riskLevel || 'CLEAN' }}</span>
-              <span style="font-family:'JetBrains Mono',monospace;font-size:0.8rem;color:#e2e8f0;margin-left:12px">{{ activeResultIP }}</span>
-              <span v-if="activeResultEntry && activeResultEntry.error" style="font-size:0.58rem;color:#fbbf24;border:1px solid rgba(251,191,36,0.3);padding:1px 7px;margin-left:8px;letter-spacing:0.06em">⚠ partial</span>
+
+            <!-- Risk + IP -->
+            <div v-if="colVisible.risk" class="flex items-center gap-3 mb-5 flex-wrap animate-fade-up">
+              <span :class="['risk-pill','risk-'+(activeResult.riskLevel||'CLEAN')]">
+                <span class="risk-dot"></span>
+                {{ activeResult.riskLevel || 'CLEAN' }}
+              </span>
+              <span class="font-mono text-lg text-t1">{{ activeResultIP }}</span>
+              <span v-if="activeResultEntry && activeResultEntry.error"
+                    class="text-xs text-rm border border-rm/25 px-2 py-0.5 rounded-pill">⚠ partial</span>
             </div>
-            <div class="cards">
-              <!-- Network card -->
-              <div v-if="colVisible.network && networkRows.length" class="card" id="card-network">
-                <div class="card-head">
-                  <span class="card-head-left">🌍 Network Info</span>
-                  <a :href="'https://api.ipapi.is/?q='+activeResultIP" target="_blank" rel="noopener" class="card-source-link">↗ ipapi.is</a>
+
+            <!-- Cards grid -->
+            <div class="grid gap-3 mb-4" style="grid-template-columns:repeat(auto-fill,minmax(290px,1fr))">
+
+              <!-- Network -->
+              <div v-if="colVisible.network && networkRows.length" class="vcard animate-fade-up">
+                <div class="vcard-head">
+                  <span class="vcard-title">🌍 Network</span>
+                  <a :href="'https://api.ipapi.is/?q='+activeResultIP" target="_blank" rel="noopener" class="vcard-link">↗ ipapi.is</a>
                 </div>
-                <div v-for="[k,v,fkey] in networkRows" :key="k" class="kv" :data-field="fkey" v-show="!fkey || fieldVisible[fkey]">
-                  <span class="kv-key">{{ k }}</span><span class="kv-val" v-html="v"></span>
+                <div class="vcard-body">
+                  <div v-for="[k,v,fkey] in networkRows" :key="k" class="kv" :data-field="fkey" v-show="!fkey||fieldVisible[fkey]">
+                    <span class="kv-key">{{ k }}</span>
+                    <span class="kv-val" v-html="v"></span>
+                  </div>
                 </div>
               </div>
-              <!-- AbuseIPDB card -->
-              <div v-if="colVisible.abuse && activeResult.abuseipdb && activeResult.abuseipdb.confidenceScore != null" class="card" id="card-abuse">
-                <div class="card-head">
-                  <span class="card-head-left">🚨 AbuseIPDB</span>
-                  <a :href="'https://www.abuseipdb.com/check/'+activeResultIP" target="_blank" rel="noopener" class="card-source-link">↗ AbuseIPDB</a>
+
+              <!-- AbuseIPDB -->
+              <div v-if="colVisible.abuse && activeResult.abuseipdb && activeResult.abuseipdb.confidenceScore!=null && !activeResult.abuseipdb.error"
+                   class="vcard animate-fade-up-2">
+                <div class="vcard-head">
+                  <span class="vcard-title">🚨 AbuseIPDB</span>
+                  <a :href="'https://www.abuseipdb.com/check/'+activeResultIP" target="_blank" rel="noopener" class="vcard-link">↗ AbuseIPDB</a>
                 </div>
-                <div class="kv" v-show="fieldVisible['ab-score']">
-                  <span class="kv-key">Confidence</span>
-                  <span class="kv-val" :style="{color: abuseColor(activeResult.abuseipdb.confidenceScore), fontWeight:600}">{{ activeResult.abuseipdb.confidenceScore }}%</span>
-                </div>
-                <div class="meter" v-show="fieldVisible['ab-meter']">
-                  <div class="meter-bar" :style="{width: activeResult.abuseipdb.confidenceScore+'%', background: abuseColor(activeResult.abuseipdb.confidenceScore)}"></div>
-                </div>
-                <div class="kv" v-show="fieldVisible['ab-reports']">
-                  <span class="kv-key">Total Reports</span><span class="kv-val">{{ activeResult.abuseipdb.totalReports ?? '—' }}</span>
-                </div>
-                <div class="kv" v-show="fieldVisible['ab-lastreport']">
-                  <span class="kv-key">Last Reported</span><span class="kv-val">{{ activeResult.abuseipdb.lastReportedAt || '—' }}</span>
-                </div>
-              </div>
-              <!-- VirusTotal card -->
-              <div v-if="colVisible.vt && activeResult.virustotal && activeResult.virustotal.malicious != null" class="card" id="card-vt">
-                <div class="card-head">
-                  <span class="card-head-left">🧪 VirusTotal</span>
-                  <a :href="'https://www.virustotal.com/gui/ip-address/'+activeResultIP" target="_blank" rel="noopener" class="card-source-link">↗ VirusTotal</a>
-                </div>
-                <div class="kv" v-show="fieldVisible['vt-summary']">
-                  <span class="kv-key">Summary (S/U/H)</span><span class="kv-val">{{ activeResult.virustotal ? (activeResult.virustotal.suspicious ?? 0) + '/' + (activeResult.virustotal.undetected ?? 0) + '/' + (activeResult.virustotal.harmless ?? 0) : '—' }}</span>
-                </div>
-                <div class="vt-pills">
-                  <span v-show="fieldVisible['vt-malicious']"  class="vt-pill mal">🔴 Malicious: {{ activeResult.virustotal.malicious }}</span>
-                  <span v-show="fieldVisible['vt-suspicious']" class="vt-pill sus">🟡 Suspicious: {{ activeResult.virustotal.suspicious ?? 0 }}</span>
-                  <span v-show="fieldVisible['vt-harmless']"   class="vt-pill ok">🟢 Harmless: {{ vtStatPart(2) }}</span>
-                  <span v-show="fieldVisible['vt-undetected']" class="vt-pill unk">⬜ Undetected: {{ vtStatPart(1) }}</span>
-                </div>
-              </div>
-              <!-- ThreatFox card (IP mode) -->
-              <div v-if="activeResult.threatfox" class="card" id="card-tf">
-                <div class="card-head">
-                  <span class="card-head-left">🦊 ThreatFox</span>
-                  <div class="flex items-center gap-2">
-                    <span v-if="activeResult.threatfox.queryStatus === 'ok'" class="mb-found-badge">✓ Found</span>
-                    <span v-else class="mb-notfound-badge">✗ {{ activeResult.threatfox.queryStatus || 'No Result' }}</span>
-                    <a :href="'https://threatfox.abuse.ch/browse.php?search=ioc%3A'+activeResultIP" target="_blank" rel="noopener" class="card-source-link">↗ ThreatFox</a>
-                  </div>
-                </div>
-                <template v-if="activeResult.threatfox.queryStatus === 'ok'">
-                  <div v-if="activeResult.threatfox.malware" class="kv">
-                    <span class="kv-key">Malware</span>
-                    <span class="kv-val" style="color:var(--red);font-weight:600">{{ activeResult.threatfox.malware }}</span>
-                  </div>
-                  <div v-if="activeResult.threatfox.threatType" class="kv">
-                    <span class="kv-key">Threat Type</span><span class="kv-val">{{ activeResult.threatfox.threatType }}</span>
-                  </div>
-                  <div v-if="activeResult.threatfox.malwareAlias" class="kv">
-                    <span class="kv-key">Aliases</span>
-                    <span class="kv-val" style="color:var(--text1);font-size:0.68rem">{{ activeResult.threatfox.malwareAlias }}</span>
-                  </div>
-                  <div v-if="activeResult.threatfox.confidenceLevel != null" class="kv">
+                <div class="vcard-body">
+                  <div class="kv" v-show="fieldVisible['ab-score']">
                     <span class="kv-key">Confidence</span>
-                    <span class="kv-val" :style="{color: activeResult.threatfox.confidenceLevel >= 75 ? 'var(--red)' : activeResult.threatfox.confidenceLevel >= 50 ? 'var(--orange)' : 'var(--yellow)', fontWeight:600}">
-                      {{ activeResult.threatfox.confidenceLevel }}%
+                    <span class="kv-val font-bold" :style="{color: abuseColor(activeResult.abuseipdb.confidenceScore)}">
+                      {{ activeResult.abuseipdb.confidenceScore }}%
                     </span>
                   </div>
-                  <div v-if="activeResult.threatfox.firstSeen" class="kv">
-                    <span class="kv-key">First Seen</span><span class="kv-val">{{ activeResult.threatfox.firstSeen }}</span>
+                  <div class="meter" v-show="fieldVisible['ab-meter']">
+                    <div class="meter-bar" :style="{width: activeResult.abuseipdb.confidenceScore+'%', background: abuseColor(activeResult.abuseipdb.confidenceScore)}"></div>
                   </div>
-                  <div v-if="activeResult.threatfox.lastSeen" class="kv">
-                    <span class="kv-key">Last Seen</span><span class="kv-val">{{ activeResult.threatfox.lastSeen }}</span>
+                  <div class="kv" v-show="fieldVisible['ab-reports']">
+                    <span class="kv-key">Reports</span>
+                    <span class="kv-val">{{ activeResult.abuseipdb.totalReports ?? '—' }}</span>
                   </div>
-                  <div v-if="activeResult.threatfox.reporter" class="kv">
-                    <span class="kv-key">Reporter</span>
-                    <span class="kv-val" style="color:var(--text1)">{{ activeResult.threatfox.reporter }}</span>
+                  <div class="kv" v-show="fieldVisible['ab-lastreport']">
+                    <span class="kv-key">Last Reported</span>
+                    <span class="kv-val">{{ activeResult.abuseipdb.lastReportedAt || '—' }}</span>
                   </div>
-                  <div v-if="activeResult.threatfox.tags && activeResult.threatfox.tags.length" class="hash-tags mt-2">
-                    <span v-for="tag in activeResult.threatfox.tags" :key="tag" class="hash-tag">{{ tag }}</span>
+                  <div v-if="activeResult.abuseipdb.usageType" class="kv">
+                    <span class="kv-key">Usage Type</span>
+                    <span class="kv-val">{{ activeResult.abuseipdb.usageType }}</span>
                   </div>
-                  <div v-if="activeResult.threatfox.malwareSamples && activeResult.threatfox.malwareSamples.length" class="mt-3">
-                    <div class="vt-subsection-label">Associated Samples</div>
-                    <div v-for="s in activeResult.threatfox.malwareSamples" :key="s.sha256_hash" class="kv mt-1" style="align-items:flex-start">
-                      <span class="kv-key" style="font-size:0.58rem;padding-top:2px">SHA256</span>
-                      <span class="kv-val" style="font-size:0.58rem;word-break:break-all">
-                        <a v-if="s.malware_bazaar" :href="s.malware_bazaar" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none">{{ s.sha256_hash }}</a>
-                        <span v-else>{{ s.sha256_hash }}</span>
+                  <div v-if="activeResult.abuseipdb.domain" class="kv">
+                    <span class="kv-key">Domain</span>
+                    <span class="kv-val">{{ activeResult.abuseipdb.domain }}</span>
+                  </div>
+                  <div v-if="activeResult.abuseipdb.numDistinctUsers" class="kv">
+                    <span class="kv-key">Distinct Users</span>
+                    <span class="kv-val">{{ activeResult.abuseipdb.numDistinctUsers }}</span>
+                  </div>
+                  <div class="kv">
+                    <span class="kv-key">Tor Exit Node</span>
+                    <span class="kv-val font-semibold" :style="{color: activeResult.abuseipdb.isTor ? 'var(--r0)' : 'var(--r4)'}">
+                      {{ activeResult.abuseipdb.isTor ? '✓ Yes' : '✗ No' }}
+                    </span>
+                  </div>
+                  <div class="kv">
+                    <span class="kv-key">Public IP</span>
+                    <span class="kv-val font-semibold" :style="{color: activeResult.abuseipdb.isPublic ? 'var(--r3)' : 'var(--r4)'}">
+                      {{ activeResult.abuseipdb.isPublic ? '✓ Yes' : '✗ No' }}
+                    </span>
+                  </div>
+                  <div class="kv">
+                    <span class="kv-key">Whitelisted</span>
+                    <span class="kv-val font-semibold" :style="{color: activeResult.abuseipdb.isWhitelisted ? 'var(--r4)' : 'var(--r3)'}">
+                      {{ activeResult.abuseipdb.isWhitelisted ? '✓ Yes' : '✗ No' }}
+                    </span>
+                  </div>
+                  <div v-if="activeResult.abuseipdb.hostnames && activeResult.abuseipdb.hostnames.length" class="kv" style="align-items:flex-start">
+                    <span class="kv-key" style="padding-top:2px">Hostnames</span>
+                    <span class="kv-val text-right" style="font-size:0.65rem">
+                      {{ activeResult.abuseipdb.hostnames.join(', ') }}
+                    </span>
+                  </div>
+                  <div v-if="activeResult.abuseipdb.categories && activeResult.abuseipdb.categories.length"
+                       class="border-t border-white/6 px-3 pt-2 pb-3">
+                    <div class="text-xs font-bold tracking-widest uppercase mb-1.5" style="color:#565e6e;font-size:0.54rem">Report Categories</div>
+                    <div class="flex flex-wrap gap-1">
+                      <span v-for="cat in activeResult.abuseipdb.categories" :key="cat"
+                            class="text-xs px-2 py-0.5 border rounded font-medium"
+                            style="color:#fba962;border-color:rgba(251,169,98,0.28);background:rgba(251,169,98,0.08);font-size:0.6rem">
+                        {{ cat }}
                       </span>
                     </div>
                   </div>
-                </template>
-                <div v-if="activeResult.threatfox.queryStatus !== 'ok'" class="kv mt-2">
-                  <span class="kv-val" style="color:var(--muted);font-style:italic;font-size:0.68rem">
-                    {{ activeResult.threatfox.queryStatus === 'no_results' ? 'No ThreatFox intelligence for this IP.' : activeResult.threatfox.queryStatus }}
-                  </span>
                 </div>
               </div>
-              <!-- GreyNoise card (IP mode) -->
-              <div v-if="activeResult.greynoise" class="card" id="card-gn">
-                <div class="card-head">
-                  <span class="card-head-left">📡 GreyNoise</span>
+
+              <!-- VirusTotal -->
+              <div v-if="colVisible.vt && activeResult.virustotal && activeResult.virustotal.malicious!=null && !activeResult.virustotal.error"
+                   class="vcard animate-fade-up-3">
+                <div class="vcard-head">
+                  <span class="vcard-title">🧪 VirusTotal</span>
+                  <a :href="'https://www.virustotal.com/gui/ip-address/'+activeResultIP" target="_blank" rel="noopener" class="vcard-link">↗ VirusTotal</a>
+                </div>
+                <div class="vcard-body">
+                  <div class="kv" v-show="fieldVisible['vt-summary']">
+                    <span class="kv-key">S / U / H</span>
+                    <span class="kv-val">{{ activeResult.virustotal ? (activeResult.virustotal.suspicious??0)+' / '+(activeResult.virustotal.undetected??0)+' / '+(activeResult.virustotal.harmless??0) : '—' }}</span>
+                  </div>
+                  <div class="vt-pills">
+                    <span v-show="fieldVisible['vt-malicious']"  class="vt-pill mal">Malicious · {{ activeResult.virustotal.malicious }}</span>
+                    <span v-show="fieldVisible['vt-suspicious']" class="vt-pill sus">Suspicious · {{ activeResult.virustotal.suspicious??0 }}</span>
+                    <span v-show="fieldVisible['vt-harmless']"   class="vt-pill ok">Harmless · {{ vtStatPart(2) }}</span>
+                    <span v-show="fieldVisible['vt-undetected']" class="vt-pill unk">Undetected · {{ vtStatPart(1) }}</span>
+                  </div>
+                  <div v-if="activeResult.virustotal.lastAnalysisDate"
+                       class="kv border-t border-white/6 px-3 py-2">
+                    <span class="kv-key">Last Scanned</span>
+                    <span class="kv-val" style="color:#9ca3b0">{{ activeResult.virustotal.lastAnalysisDate }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ThreatFox -->
+              <div v-if="activeResult.threatfox && activeResult.threatfox.queryStatus !== 'error'" class="vcard animate-fade-up-4">
+                <div class="vcard-head">
+                  <span class="vcard-title">🦊 ThreatFox</span>
                   <div class="flex items-center gap-2">
-                    <span v-if="activeResult.greynoise.notObserved" class="mb-notfound-badge">✗ Not Observed</span>
-                    <span v-else-if="activeResult.greynoise.error" class="mb-notfound-badge">✗ Error</span>
-                    <span v-else-if="activeResult.greynoise.riot" class="mb-found-badge" style="background:rgba(52,211,153,0.1);border-color:rgba(52,211,153,0.4);color:#34d399">✓ RIOT</span>
-                    <span v-else class="mb-found-badge">✓ Found</span>
-                    <a :href="'https://viz.greynoise.io/ip/'+activeResultIP" target="_blank" rel="noopener" class="card-source-link">↗ GreyNoise</a>
+                    <span v-if="activeResult.threatfox.queryStatus==='ok'" class="mb-found-badge">✓ Found</span>
+                    <span v-else class="mb-notfound-badge">{{ activeResult.threatfox.queryStatus || 'No result' }}</span>
+                    <a :href="'https://threatfox.abuse.ch/browse.php?search=ioc%3A'+activeResultIP" target="_blank" rel="noopener" class="vcard-link">↗ ThreatFox</a>
                   </div>
                 </div>
-                <template v-if="!activeResult.greynoise.notObserved && !activeResult.greynoise.error">
-                  <div v-if="activeResult.greynoise.classification" class="kv">
-                    <span class="kv-key">Classification</span>
-                    <span class="kv-val" :style="{
-                      color: activeResult.greynoise.classification === 'malicious'  ? 'var(--red)'    :
-                             activeResult.greynoise.classification === 'suspicious' ? 'var(--yellow)' :
-                             activeResult.greynoise.classification === 'benign'     ? 'var(--green)'  : 'var(--muted)',
-                      fontWeight: 600, textTransform: 'capitalize'
-                    }">{{ activeResult.greynoise.classification }}</span>
-                  </div>
-                  <div class="kv">
-                    <span class="kv-key">Internet Scanner</span>
-                    <span class="kv-val" :style="{color: activeResult.greynoise.noise ? 'var(--yellow)' : 'var(--green)'}">
-                      {{ activeResult.greynoise.noise ? '⚠ Yes — Active Scanner' : '✓ No' }}
+                <div class="vcard-body">
+                  <template v-if="activeResult.threatfox.queryStatus==='ok'">
+                    <div v-if="activeResult.threatfox.malware" class="kv">
+                      <span class="kv-key">Malware</span>
+                      <span class="kv-val font-bold" style="color:var(--r0)">{{ activeResult.threatfox.malware }}</span>
+                    </div>
+                    <div v-if="activeResult.threatfox.threatType" class="kv">
+                      <span class="kv-key">Threat Type</span>
+                      <span class="kv-val">{{ activeResult.threatfox.threatType }}</span>
+                    </div>
+                    <div v-if="activeResult.threatfox.malwareAlias" class="kv">
+                      <span class="kv-key">Aliases</span>
+                      <span class="kv-val text-t2" style="font-size:0.64rem">{{ activeResult.threatfox.malwareAlias }}</span>
+                    </div>
+                    <div v-if="activeResult.threatfox.confidenceLevel!=null" class="kv">
+                      <span class="kv-key">Confidence</span>
+                      <span class="kv-val font-bold" :style="{color:activeResult.threatfox.confidenceLevel>=75?'var(--r0)':activeResult.threatfox.confidenceLevel>=50?'var(--r1)':'var(--r2)'}">
+                        {{ activeResult.threatfox.confidenceLevel }}%
+                      </span>
+                    </div>
+                    <div v-if="activeResult.threatfox.firstSeen" class="kv">
+                      <span class="kv-key">First Seen</span>
+                      <span class="kv-val">{{ activeResult.threatfox.firstSeen }}</span>
+                    </div>
+                    <div v-if="activeResult.threatfox.reporter" class="kv">
+                      <span class="kv-key">Reporter</span>
+                      <span class="kv-val text-t2">{{ activeResult.threatfox.reporter }}</span>
+                    </div>
+                    <div v-if="activeResult.threatfox.tags && activeResult.threatfox.tags.length" class="px-3 pb-3 pt-1 flex flex-wrap gap-1">
+                      <span v-for="tag in activeResult.threatfox.tags" :key="tag" class="hash-tag">{{ tag }}</span>
+                    </div>
+                    <div v-if="activeResult.threatfox.malwareSamples && activeResult.threatfox.malwareSamples.length" class="px-3 pb-3">
+                      <div class="vt-subsection-label">Associated Samples</div>
+                      <div v-for="s in activeResult.threatfox.malwareSamples" :key="s.sha256_hash" class="kv" style="align-items:flex-start;padding:4px 0">
+                        <span class="kv-key" style="font-size:0.56rem;padding-top:2px">SHA256</span>
+                        <span class="kv-val" style="font-size:0.56rem;word-break:break-all">
+                          <a v-if="s.malware_bazaar" :href="s.malware_bazaar" target="_blank" rel="noopener" class="text-prime">{{ s.sha256_hash }}</a>
+                          <span v-else>{{ s.sha256_hash }}</span>
+                        </span>
+                      </div>
+                    </div>
+                  </template>
+                  <div v-if="activeResult.threatfox.queryStatus!=='ok'" class="kv">
+                    <span class="kv-val text-t3 italic" style="font-size:0.66rem">
+                      {{ activeResult.threatfox.queryStatus==='no_results'?'No ThreatFox intelligence for this IP.':activeResult.threatfox.queryStatus }}
                     </span>
                   </div>
-                  <div class="kv">
-                    <span class="kv-key">Trusted Service (RIOT)</span>
-                    <span class="kv-val" :style="{color: activeResult.greynoise.riot ? 'var(--green)' : 'var(--muted)'}">
-                      {{ activeResult.greynoise.riot ? '✓ Yes — Known Safe' : 'No' }}
-                    </span>
-                  </div>
-                  <div v-if="activeResult.greynoise.name && activeResult.greynoise.name !== 'unknown'" class="kv">
-                    <span class="kv-key">Actor / Service</span>
-                    <span class="kv-val">{{ activeResult.greynoise.name }}</span>
-                  </div>
-                  <div v-if="activeResult.greynoise.lastSeen" class="kv">
-                    <span class="kv-key">Last Seen</span>
-                    <span class="kv-val">{{ activeResult.greynoise.lastSeen }}</span>
-                  </div>
-                </template>
-                <div v-if="activeResult.greynoise.notObserved" class="kv mt-2">
-                  <span class="kv-val" style="color:var(--muted);font-style:italic;font-size:0.68rem">
-                    Not observed scanning the internet or in RIOT dataset.
-                  </span>
-                </div>
-                <div v-if="activeResult.greynoise.error" class="kv mt-2">
-                  <span class="kv-val" style="color:var(--red);font-size:0.68rem">{{ activeResult.greynoise.error }}</span>
                 </div>
               </div>
-            </div>
+
+              <!-- GreyNoise -->
+              <div v-if="activeResult.greynoise && !activeResult.greynoise.error" class="vcard" style="animation:fadeUp 0.22s ease 0.20s both">
+                <div class="vcard-head">
+                  <span class="vcard-title">🔊 GreyNoise</span>
+                  <div class="flex items-center gap-2">
+                    <span v-if="activeResult.greynoise.classification==='malicious'" class="mb-found-badge" style="color:var(--r0);border-color:rgba(252,129,129,0.3);background:var(--r0a)">✗ Malicious</span>
+                    <span v-else-if="activeResult.greynoise.classification==='benign'" class="mb-found-badge">✓ Benign</span>
+                    <span v-else-if="activeResult.greynoise.noise" class="mb-notfound-badge" style="color:var(--r2);border-color:rgba(252,211,77,0.3)">⚡ Noise</span>
+                    <span v-else-if="activeResult.greynoise.error" class="mb-notfound-badge">No result</span>
+                    <a :href="'https://viz.greynoise.io/ip/'+activeResultIP" target="_blank" rel="noopener" class="vcard-link">↗ GreyNoise</a>
+                  </div>
+                </div>
+                <div class="vcard-body">
+                  <div v-if="activeResult.greynoise.error" class="kv">
+                    <span class="kv-val text-t3 italic" style="font-size:0.66rem">{{ activeResult.greynoise.error }}</span>
+                  </div>
+                  <template v-else>
+                    <div v-if="activeResult.greynoise.classification" class="kv">
+                      <span class="kv-key">Classification</span>
+                      <span class="kv-val font-semibold"
+                            :style="{color: activeResult.greynoise.classification==='malicious'?'var(--r0)':activeResult.greynoise.classification==='benign'?'var(--r4)':'var(--r2)'}">
+                        {{ activeResult.greynoise.classification }}
+                      </span>
+                    </div>
+                    <div v-if="activeResult.greynoise.name && activeResult.greynoise.name !== 'unknown'" class="kv">
+                      <span class="kv-key">Actor</span>
+                      <span class="kv-val">{{ activeResult.greynoise.name }}</span>
+                    </div>
+                    <div class="kv">
+                      <span class="kv-key">Internet Scanner</span>
+                      <span class="kv-val font-semibold" :style="{color: activeResult.greynoise.noise?'var(--r2)':'var(--r4)'}">
+                        {{ activeResult.greynoise.noise ? '✓ Yes' : '✗ No' }}
+                      </span>
+                    </div>
+                    <div class="kv">
+                      <span class="kv-key">RIOT (trusted)</span>
+                      <span class="kv-val font-semibold" :style="{color: activeResult.greynoise.riot?'var(--r4)':'var(--t3)'}">
+                        {{ activeResult.greynoise.riot ? '✓ Yes' : '✗ No' }}
+                      </span>
+                    </div>
+                    <div v-if="activeResult.greynoise.lastSeen" class="kv">
+                      <span class="kv-key">Last Seen</span>
+                      <span class="kv-val">{{ activeResult.greynoise.lastSeen }}</span>
+                    </div>
+                  </template>
+                </div>
+              </div>
+
+            </div><!-- /grid -->
+
             <!-- JSON panel -->
-            <div v-if="colVisible.json" class="json-panel mt-4" id="json-panel-wrap">
-              <button class="copy-btn" @click="copyJSON">COPY JSON</button>
+            <div v-if="colVisible.json" class="json-panel animate-fade-up">
+              <button class="hash-source-link float-right mb-2" @click="copyJSON">COPY</button>
               <pre><code v-html="highlightedJSON"></code></pre>
             </div>
           </div>
-          <div v-else-if="activeResultEntry && activeResultEntry.error" class="card">
-            <div class="card-head">Error</div>
-            <div style="color:var(--red)">{{ activeResultEntry.error }}</div>
+
+          <div v-else-if="activeResultEntry && activeResultEntry.error" class="vcard animate-fade-up">
+            <div class="vcard-head"><span class="vcard-title">Error</span></div>
+            <div class="kv"><span class="kv-val" style="color:var(--r0)">{{ activeResultEntry.error }}</span></div>
           </div>
         </div>
 
-        <!-- Table view -->
-        <div v-show="currentView==='table'" id="tableView">
+        <!-- ── TABLE VIEW ── -->
+        <div v-show="currentView==='table'">
           <results-table
-            :visible-cols="visibleTableCols"
-            :sorted-rows="sortedTableRows"
-            :sort-col="tableSortCol"
-            :sort-asc="tableSortAsc"
+            :visible-cols="visibleTableCols" :sorted-rows="sortedTableRows"
+            :sort-col="tableSortCol" :sort-asc="tableSortAsc"
             :render-cell="renderTableCell"
-            @sort="sortTable"
-            @row-click="row => switchToCard(row._idx)"
-          ></results-table>
+            @sort="sortTable" @row-click="row => switchToCard(row._idx)">
+          </results-table>
         </div>
       </div>
     </div>
 
-    <!-- ══ HASH SCAN SECTION ════════════════════════════════════════════ -->
+    <!-- ══ HASH SECTION ══════════════════════════════════════════════ -->
     <div v-show="currentIOCMode==='hash'">
-      <div class="border p-4 mb-6" style="border-color:#1e2d42;background:#0d1320;border-top:2px solid #c084fc">
-        <div class="flex gap-3" style="align-items:stretch">
-          <textarea id="hashInput" v-model="hashInputText" class="scan-input" rows="3"
+
+      <!-- Scan input -->
+      <div class="scan-panel">
+        <div class="flex gap-3 items-stretch">
+          <textarea v-model="hashInputText" class="scan-input flex-1" rows="3"
             placeholder="Paste MD5, SHA1, or SHA256 hashes — one per line"
-            style="flex:1;min-width:0" @keydown.enter.exact.prevent="doHashScanAction"></textarea>
-          <div class="flex flex-col gap-2" style="flex-shrink:0">
-            <div class="flex gap-2 items-center">
-              <button class="scan-btn" :disabled="isHashLoading" @click="doHashScanAction" style="flex:1">SCAN</button>
+            @keydown.enter.exact.prevent="doHashScanAction"></textarea>
+          <div class="flex flex-col gap-2 flex-shrink-0 justify-start">
+            <div class="flex items-center gap-2">
+              <button class="scan-btn h-[46px]" :disabled="isHashLoading" @click="doHashScanAction">SCAN</button>
               <span v-if="isHashLoading" class="loader"></span>
             </div>
           </div>
         </div>
-        <!-- Bulk preview -->
-        <div v-if="hashBulkCount" class="bulk-preview mt-2">
-          <span style="color:#c084fc">📋</span>
-          <span><span style="color:#cbd5e1;font-weight:600">{{ hashBulkCount }}</span> hashes detected</span>
-          <button class="action-btn" @click="clearHashBulk">✕ Clear</button>
-        </div>
-        <div class="flex items-center gap-3 mt-3 pt-3 border-t" style="border-color:#1e2d42">
-          <label class="action-btn cursor-pointer">
-            📁 Load File <input type="file" class="hidden" accept=".txt,.csv,.log" @change="handleHashFileUpload">
+        <div class="flex items-center flex-wrap gap-2 mt-3">
+          <div v-if="hashBulkCount" class="flex items-center gap-2 text-t2 text-xs">
+            <span class="font-mono font-bold text-prime">{{ hashBulkCount }}</span> hashes detected
+            <button class="meta-btn" @click="clearHashBulk">✕ Clear</button>
+          </div>
+          <label class="meta-btn cursor-pointer">
+            ↑ Load File
+            <input type="file" class="hidden" accept=".txt,.csv,.log" @change="handleHashFileUpload">
           </label>
-          <div class="flex items-center gap-2" style="cursor:pointer" @click="hashUseCache=!hashUseCache">
-            <button class="tog" :class="{on: hashUseCache}" style="cursor:pointer"></button>
-            <span style="font-size:0.68rem;color:#4d6480;user-select:none">Use Cache</span>
+          <div class="flex items-center gap-2 cursor-pointer ml-auto" @click="hashUseCache=!hashUseCache">
+            <button class="tog" :class="{on: hashUseCache}"></button>
+            <span class="text-xs text-t3 select-none">Cache</span>
           </div>
         </div>
       </div>
 
-      <!-- Error -->
-      <div v-if="hashError" class="err-box mb-4">❌ {{ hashError }}</div>
+      <div v-if="hashError" class="err-box animate-fade-up">⚠ {{ hashError }}</div>
 
-      <!-- Hash Results -->
       <div v-if="allHashResults.length">
-        <!-- View toggle + export bar -->
-        <div id="hash-results-bar" class="flex items-center justify-between flex-wrap gap-3 mb-4">
-          <div class="flex gap-0">
+        <!-- Toolbar -->
+        <div id="hash-results-bar" class="flex items-center flex-wrap gap-3 mb-5">
+          <div class="view-toggle">
             <button class="view-btn" :class="{active: hashView==='cards'}" @click="setHashView('cards')">Cards</button>
             <button class="view-btn" :class="{active: hashView==='table'}" @click="setHashView('table')">Table</button>
           </div>
-          <div class="flex items-center gap-2">
-            <div class="copy-split" style="position:relative">
-              <button class="export-btn copy-main" id="hashClipboardBtn" @click="copyHashClipboard('json')">⎘ Copy</button>
-              <button class="export-btn copy-arrow" @click="toggleHashCopyMenu">▾</button>
+          <div class="flex items-center gap-2 ml-auto">
+            <div class="copy-split copy-menu-w" style="position:relative">
+              <button class="act-btn copy-main" id="hashClipboardBtn" @click="copyHashClipboard('json')">⎘ Copy</button>
+              <button class="act-btn copy-arr" @click="toggleHashCopyMenu">▾</button>
               <div class="copy-menu" :class="{open: hashCopyMenuOpen}" @mouseleave="hashCopyMenuOpen=false">
                 <div class="copy-menu-item" @click="copyHashClipboard('json')">Copy as JSON</div>
                 <div class="copy-menu-item" @click="copyHashClipboard('csv')">Copy as CSV</div>
-                <div class="copy-menu-item" @click="copyHashClipboard('hashes')">Copy Hashes only</div>
+                <div class="copy-menu-item" @click="copyHashClipboard('hashes')">Copy hashes only</div>
               </div>
             </div>
-            <button class="export-btn" @click="exportHashCSV">↓ CSV</button>
-            <button class="export-btn" @click="exportHashJSON">↓ JSON</button>
+            <button class="act-btn" @click="exportHashCSV">↓ CSV</button>
+            <button class="act-btn" @click="exportHashJSON">↓ JSON</button>
           </div>
         </div>
 
-        <!-- Hash chip tabs (multi-hash, cards view only) -->
-        <div v-if="allHashResults.length > 1 && hashView==='cards'" class="flex flex-wrap gap-1 mb-4">
-          <div v-for="(e, i) in allHashResults" :key="i" class="ip-tab" :class="{active: i===activeHashIdx}" @click="activeHashIdx=i">
+        <!-- Hash chip tabs -->
+        <div v-if="allHashResults.length > 1 && hashView==='cards'" class="flex flex-wrap gap-2 mb-5">
+          <div v-for="(e,i) in allHashResults" :key="i"
+               class="ip-tab" :class="{active: i===activeHashIdx}" @click="activeHashIdx=i">
             <span class="ip-tab-dot" :style="{background: riskDotColor((e.result||e).riskLevel)}"></span>
-            {{ ((e.result||e).virustotal?.sha256||(e.result||e).virustotal?.sha1||(e.result||e).virustotal?.md5||e.hash||'?').slice(0,12) }}…
+            {{ ((e.result||e).virustotal?.sha256||(e.result||e).virustotal?.sha1||(e.result||e).virustotal?.md5||e.hash||'?').slice(0,14) }}…
           </div>
         </div>
 
-        <!-- Hash Cards view -->
+        <!-- ── HASH CARDS ── -->
         <div v-show="hashView==='cards'">
-          <div v-if="activeHashResult" class="hash-result-card" :class="(activeHashResult.riskLevel||'').toLowerCase()">
+          <div v-if="activeHashResult">
 
-            <!-- Card header: hash value + badges + source links -->
-            <div class="hash-card-header">
-              <div style="flex:1;min-width:0">
-                <div class="hash-card-title">{{ (activeHashResult.virustotal && (activeHashResult.virustotal.sha256 || activeHashResult.virustotal.sha1 || activeHashResult.virustotal.md5)) || allHashResults[activeHashIdx]?.hash || '—' }}</div>
-                <div class="hash-card-meta">
-                  <span v-if="activeHashResult.riskLevel" :class="['risk-pill','risk-'+(activeHashResult.riskLevel)]">{{ activeHashResult.riskLevel }}</span>
-                  <span v-if="activeHashResult.hashType"  class="hash-type-badge">{{ activeHashResult.hashType }}</span>
-                  <span v-if="activeHashResult.virustotal && activeHashResult.virustotal.suggestedThreatLabel" class="hash-threat-label">{{ activeHashResult.virustotal.suggestedThreatLabel }}</span>
-                  <span v-if="allHashResults[activeHashIdx] && allHashResults[activeHashIdx].error" style="font-size:0.58rem;color:#fbbf24;border:1px solid rgba(251,191,36,0.3);padding:1px 7px;letter-spacing:0.06em">⚠ partial</span>
-                </div>
-              </div>
-              <div class="flex gap-2" style="flex-shrink:0">
-                <a v-if="hashResultLinks.virustotal && !vtNotFound" :href="hashResultLinks.virustotal" target="_blank" rel="noopener" class="hash-source-link">↗ VT</a>
-                <span v-else-if="vtNotFound" class="hash-source-link-na" title="Hash not found in VirusTotal">✗ VT</span>
-                <a v-if="hashResultLinks.malwarebazaar && activeHashResult.malwarebazaar && activeHashResult.malwarebazaar.queryStatus === 'ok'" :href="hashResultLinks.malwarebazaar" target="_blank" rel="noopener" class="hash-source-link">↗ MB</a>
-                <span v-else-if="activeHashResult.malwarebazaar && activeHashResult.malwarebazaar.queryStatus && activeHashResult.malwarebazaar.queryStatus !== 'ok'" class="hash-source-link-na" title="Hash not found in MalwareBazaar">✗ MB</span>
-              </div>
-            </div>
+            <div class="hash-card animate-fade-up"
+                 :class="'hash-card-top-'+(activeHashResult.riskLevel||'').toLowerCase()">
 
-            <!-- Hash Values row (full-width, above cards) -->
-            <div class="border-b mb-4 pb-4" style="border-color:#1e2d42">
-              <div class="hash-section-title" style="margin-bottom:8px">⬡ Hash Values</div>
-              <div v-if="activeHashResult.virustotal && activeHashResult.virustotal.md5"    class="kv"><span class="kv-key">MD5</span><span class="kv-val">{{ activeHashResult.virustotal.md5 }}</span></div>
-              <div v-if="activeHashResult.virustotal && activeHashResult.virustotal.sha1"   class="kv"><span class="kv-key">SHA1</span><span class="kv-val">{{ activeHashResult.virustotal.sha1 }}</span></div>
-              <div v-if="activeHashResult.virustotal && activeHashResult.virustotal.sha256" class="kv"><span class="kv-key">SHA256</span><span class="kv-val">{{ activeHashResult.virustotal.sha256 }}</span></div>
-            </div>
-
-            <!-- Three-column card grid -->
-            <div class="cards" style="margin-bottom:0">
-
-              <!-- FILE INFO card -->
-              <div class="card">
-                <div class="card-head"><span class="card-head-left">📄 File Info</span></div>
-                <div v-if="activeHashResult.virustotal && activeHashResult.virustotal.meaningfulName" class="kv">
-                  <span class="kv-key">Name</span><span class="kv-val">{{ activeHashResult.virustotal.meaningfulName }}</span>
-                </div>
-                <div v-if="activeHashResult.virustotal && activeHashResult.virustotal.magic" class="kv">
-                  <span class="kv-key">Magic</span><span class="kv-val">{{ activeHashResult.virustotal.magic }}</span>
-                </div>
-                <div v-if="activeHashResult.virustotal && activeHashResult.virustotal.magika" class="kv">
-                  <span class="kv-key">Magika</span><span class="kv-val">{{ activeHashResult.virustotal.magika }}</span>
-                </div>
-                <div v-if="activeHashResult.virustotal && activeHashResult.virustotal.fileSize" class="kv">
-                  <span class="kv-key">Size</span><span class="kv-val">{{ formatBytes(activeHashResult.virustotal.fileSize) }}</span>
-                </div>
-                <div v-if="activeHashResult.virustotal && toArr(activeHashResult.virustotal.signatureSigners).length" class="kv">
-                  <span class="kv-key">Signer</span>
-                  <span class="kv-val">{{ toArr(activeHashResult.virustotal.signatureSigners).join(', ') }}</span>
-                </div>
-                <!-- Code signing detail box -->
-                <div v-if="activeHashResult.virustotal && toArr(activeHashResult.virustotal.signatureSigners).length" class="codesign-box">
-                  <div class="flex items-center gap-2 mb-1">
-                    <span style="font-size:0.62rem;color:#f87171;font-weight:700">⚠ Code Signed</span>
-                    <span v-if="signerIsRevoked" class="revoked-badge">REVOKED</span>
-                    <span v-else-if="signerIsInvalid" class="invalid-badge">INVALID</span>
+              <!-- Header -->
+              <div class="flex items-start justify-between gap-4 p-5 border-b border-white/[0.06]"
+                   style="background:#15151c">
+                <div class="flex-1 min-w-0">
+                  <div class="font-mono text-xs text-t1 break-all leading-relaxed mb-2">
+                    {{ (activeHashResult.virustotal&&(activeHashResult.virustotal.sha256||activeHashResult.virustotal.sha1||activeHashResult.virustotal.md5))||allHashResults[activeHashIdx]?.hash||'—' }}
                   </div>
-                  <template v-if="signerDetailObj">
-                    <div class="codesign-row"><span class="codesign-lbl">Issuer</span><span class="codesign-val">{{ signerDetailObj.certIssuer }}</span></div>
-                    <div class="codesign-row"><span class="codesign-lbl">Entity</span><span class="codesign-val">{{ signerDetailObj.name }}</span></div>
-                    <div class="codesign-row" v-if="signerDetailObj.validFrom"><span class="codesign-lbl">Valid</span><span class="codesign-val">{{ signerDetailObj.validFrom }} → {{ signerDetailObj.validTo }}</span></div>
-                    <div class="codesign-status mt-1">{{ signerDetailObj.status }}</div>
-                  </template>
-                  <div v-else-if="activeHashResult.virustotal.signerDetail" class="codesign-revoked">{{ activeHashResult.virustotal.signerDetail }}</div>
-                </div>
-                <div v-if="!activeHashResult.virustotal || (!activeHashResult.virustotal.meaningfulName && !activeHashResult.virustotal.magic && !activeHashResult.virustotal.magika && !activeHashResult.virustotal.fileSize)" class="kv">
-                  <span class="kv-key" style="font-style:italic;color:var(--dim)">No file info available</span>
-                </div>
-              </div>
-
-              <!-- VIRUSTOTAL card -->
-              <div v-if="(activeHashResult.virustotal && activeHashResult.virustotal.malicious != null) || vtNotFound" class="card">
-                <div class="card-head">
-                  <span class="card-head-left">🧪 VirusTotal</span>
-                  <div class="flex items-center gap-2">
-                    <span v-if="vtNotFound" class="mb-notfound-badge">✗ Not Found</span>
-                    <a v-if="hashResultLinks.virustotal" :href="hashResultLinks.virustotal" target="_blank" rel="noopener" class="card-source-link">↗ VirusTotal</a>
-                  </div>
-                </div>
-                <div v-if="vtNotFound" class="kv mt-2">
-                  <span class="kv-val" style="color:var(--muted);font-style:italic;font-size:0.68rem">This hash was not found in VirusTotal.</span>
-                </div>
-                <template v-else-if="activeHashResult.virustotal">
-                  <div class="vt-pills">
-                    <span class="vt-pill mal">🔴 Malicious: {{ activeHashResult.virustotal.malicious }}</span>
-                    <span class="vt-pill sus">🟡 Suspicious: {{ activeHashResult.virustotal.suspicious ?? 0 }}</span>
-                    <span v-if="activeHashResult.virustotal.harmless   != null" class="vt-pill ok" >🟢 Harmless: {{ activeHashResult.virustotal.harmless }}</span>
-                    <span v-if="activeHashResult.virustotal.undetected != null" class="vt-pill unk">⬜ Undetected: {{ activeHashResult.virustotal.undetected }}</span>
-                  </div>
-                  <div v-if="activeHashResult.virustotal.reputation != null" class="kv mt-3">
-                    <span class="kv-key">Reputation</span>
-                    <span class="kv-val" :style="{color: activeHashResult.virustotal.reputation < 0 ? 'var(--red)' : activeHashResult.virustotal.reputation > 0 ? 'var(--green)' : 'var(--muted)'}">
-                      {{ activeHashResult.virustotal.reputation > 0 ? '+' : '' }}{{ activeHashResult.virustotal.reputation }}
+                  <div class="flex flex-wrap gap-1.5">
+                    <span v-if="activeHashResult.riskLevel" :class="['risk-pill','risk-'+activeHashResult.riskLevel]">
+                      <span class="risk-dot"></span>{{ activeHashResult.riskLevel }}
                     </span>
+                    <span v-if="activeHashResult.hashType" class="hash-type-badge">{{ activeHashResult.hashType }}</span>
+                    <span v-if="activeHashResult.virustotal&&activeHashResult.virustotal.suggestedThreatLabel" class="hash-threat-label">{{ activeHashResult.virustotal.suggestedThreatLabel }}</span>
                   </div>
-                  <div v-if="toArr(activeHashResult.virustotal.popularThreatNames).length" class="mt-3">
-                    <div class="vt-subsection-label">Threat Names</div>
-                    <div class="flex flex-wrap gap-1 mt-1">
-                      <span v-for="n in toArr(activeHashResult.virustotal.popularThreatNames)" :key="n" class="hash-family-badge">{{ n }}</span>
+                </div>
+                <div class="flex gap-2 flex-shrink-0">
+                  <a v-if="hashResultLinks.virustotal && !vtNotFound" :href="hashResultLinks.virustotal" target="_blank" rel="noopener" class="hash-source-link">↗ VT</a>
+                  <span v-else-if="vtNotFound" class="hash-source-link-na">✗ VT</span>
+                  <a v-if="hashResultLinks.malwarebazaar && activeHashResult.malwarebazaar && activeHashResult.malwarebazaar.queryStatus==='ok'" :href="hashResultLinks.malwarebazaar" target="_blank" rel="noopener" class="hash-source-link">↗ MB</a>
+                  <span v-else-if="activeHashResult.malwarebazaar && activeHashResult.malwarebazaar.queryStatus && activeHashResult.malwarebazaar.queryStatus!=='ok'" class="hash-source-link-na">✗ MB</span>
+                </div>
+              </div>
+
+              <!-- Hash values -->
+              <div class="px-5 py-3 border-b border-white/[0.06]">
+                <div class="hash-section-title">Hash Values</div>
+                <div v-if="activeHashResult.virustotal?.md5"    class="hash-kv"><span class="hash-kv-key">MD5</span><span class="hash-kv-val">{{ activeHashResult.virustotal.md5 }}</span></div>
+                <div v-if="activeHashResult.virustotal?.sha1"   class="hash-kv"><span class="hash-kv-key">SHA1</span><span class="hash-kv-val">{{ activeHashResult.virustotal.sha1 }}</span></div>
+                <div v-if="activeHashResult.virustotal?.sha256" class="hash-kv"><span class="hash-kv-key">SHA256</span><span class="hash-kv-val">{{ activeHashResult.virustotal.sha256 }}</span></div>
+              </div>
+
+              <!-- Sub-card grid -->
+              <div class="p-4 grid gap-3" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr))">
+
+                <!-- File info -->
+                <div class="vcard">
+                  <div class="vcard-head"><span class="vcard-title">📄 File Info</span></div>
+                  <div class="vcard-body">
+                    <div v-if="activeHashResult.virustotal?.meaningfulName" class="hash-kv px-3"><span class="hash-kv-key">Name</span><span class="hash-kv-val">{{ activeHashResult.virustotal.meaningfulName }}</span></div>
+                    <div v-if="activeHashResult.virustotal?.magic"           class="hash-kv px-3"><span class="hash-kv-key">Type</span><span class="hash-kv-val">{{ activeHashResult.virustotal.magic }}</span></div>
+                    <div v-if="activeHashResult.virustotal?.magika"          class="hash-kv px-3"><span class="hash-kv-key">Magika</span><span class="hash-kv-val">{{ activeHashResult.virustotal.magika }}</span></div>
+                    <div v-if="activeHashResult.virustotal?.fileSize"        class="hash-kv px-3"><span class="hash-kv-key">Size</span><span class="hash-kv-val">{{ formatBytes(activeHashResult.virustotal.fileSize) }}</span></div>
+                    <div v-if="activeHashResult.virustotal && toArr(activeHashResult.virustotal.signatureSigners).length" class="hash-kv px-3">
+                      <span class="hash-kv-key">Signer</span>
+                      <span class="hash-kv-val">{{ toArr(activeHashResult.virustotal.signatureSigners).join(', ') }}</span>
+                    </div>
+                    <div v-if="activeHashResult.virustotal && toArr(activeHashResult.virustotal.signatureSigners).length" class="mx-3 mb-2 codesign-box">
+                      <div class="codesign-revoked">
+                        ⚠ Code Signed
+                        <span v-if="signerIsRevoked" class="revoked-badge">REVOKED</span>
+                        <span v-else-if="signerIsInvalid" class="invalid-badge">INVALID</span>
+                      </div>
+                      <template v-if="signerDetailObj">
+                        <div class="codesign-row"><span class="codesign-lbl">Issuer</span><span class="codesign-val">{{ signerDetailObj.certIssuer }}</span></div>
+                        <div class="codesign-row"><span class="codesign-lbl">Entity</span><span class="codesign-val">{{ signerDetailObj.name }}</span></div>
+                        <div v-if="signerDetailObj.validFrom" class="codesign-row"><span class="codesign-lbl">Valid</span><span class="codesign-val">{{ signerDetailObj.validFrom }} → {{ signerDetailObj.validTo }}</span></div>
+                        <div class="codesign-status">{{ signerDetailObj.status }}</div>
+                      </template>
                     </div>
                   </div>
-                  <div v-if="toArr(activeHashResult.virustotal.popularThreatCategories).length" class="mt-3">
-                    <div class="vt-subsection-label">Threat Categories</div>
-                    <div class="flex flex-wrap gap-1 mt-1">
-                      <span v-for="c in toArr(activeHashResult.virustotal.popularThreatCategories)" :key="c" class="hash-category-badge">{{ c }}</span>
+                </div>
+
+                <!-- VirusTotal hash -->
+                <div v-if="(activeHashResult.virustotal&&activeHashResult.virustotal.malicious!=null)||vtNotFound" class="vcard">
+                  <div class="vcard-head">
+                    <span class="vcard-title">🧪 VirusTotal</span>
+                    <span v-if="vtNotFound" class="mb-notfound-badge">Not Found</span>
+                  </div>
+                  <div class="vcard-body">
+                    <div v-if="vtNotFound" class="kv"><span class="kv-val text-t3 italic" style="font-size:0.66rem">Not indexed in VirusTotal.</span></div>
+                    <template v-else-if="activeHashResult.virustotal">
+                      <div class="vt-pills">
+                        <span class="vt-badge mal">Malicious · {{ activeHashResult.virustotal.malicious }}</span>
+                        <span class="vt-badge sus">Suspicious · {{ activeHashResult.virustotal.suspicious??0 }}</span>
+                        <span v-if="activeHashResult.virustotal.harmless!=null"   class="vt-badge ok">Harmless · {{ activeHashResult.virustotal.harmless }}</span>
+                        <span v-if="activeHashResult.virustotal.undetected!=null" class="vt-badge unk">Undetected · {{ activeHashResult.virustotal.undetected }}</span>
+                      </div>
+                      <div v-if="activeHashResult.virustotal.reputation!=null" class="kv">
+                        <span class="kv-key">Reputation</span>
+                        <span class="kv-val font-bold" :style="{color:activeHashResult.virustotal.reputation<0?'var(--r0)':activeHashResult.virustotal.reputation>0?'var(--r4)':'#565e6e'}">
+                          {{ activeHashResult.virustotal.reputation>0?'+':'' }}{{ activeHashResult.virustotal.reputation }}
+                        </span>
+                      </div>
+                      <div v-if="activeHashResult.virustotal.lastAnalysisDate" class="kv">
+                        <span class="kv-key">Last Scanned</span>
+                        <span class="kv-val" style="color:#9ca3b0">{{ activeHashResult.virustotal.lastAnalysisDate }}</span>
+                      </div>
+                      <div v-if="toArr(activeHashResult.virustotal.popularThreatNames).length" class="px-3 pb-2">
+                        <div class="vt-subsection-label">Threat Names</div>
+                        <div class="flex flex-wrap gap-1 mt-1">
+                          <span v-for="n in toArr(activeHashResult.virustotal.popularThreatNames)" :key="n" class="hash-family-badge">{{ n }}</span>
+                        </div>
+                      </div>
+                      <div v-if="toArr(activeHashResult.virustotal.popularThreatCategories).length" class="px-3 pb-2">
+                        <div class="vt-subsection-label">Categories</div>
+                        <div class="flex flex-wrap gap-1 mt-1">
+                          <span v-for="c in toArr(activeHashResult.virustotal.popularThreatCategories)" :key="c" class="hash-category-badge">{{ c }}</span>
+                        </div>
+                      </div>
+                      <div v-if="toArr(activeHashResult.virustotal.sandboxMalwareClassifications).length" class="px-3 pb-2">
+                        <div class="vt-subsection-label">Sandbox</div>
+                        <div class="flex flex-wrap gap-1 mt-1">
+                          <span v-for="s in toArr(activeHashResult.virustotal.sandboxMalwareClassifications)" :key="s" class="sandbox-badge">{{ s }}</span>
+                        </div>
+                      </div>
+                      <div v-if="activeHashResult.virustotal.sigmaAnalysisSummary && Object.keys(activeHashResult.virustotal.sigmaAnalysisSummary).length" class="px-3 pb-2">
+                        <div class="vt-subsection-label">Sigma Rules</div>
+                        <div v-for="(counts,ruleset) in activeHashResult.virustotal.sigmaAnalysisSummary" :key="ruleset" class="sigma-block">
+                          <div class="sigma-ruleset">{{ ruleset }}</div>
+                          <div class="flex flex-wrap gap-1">
+                            <span v-if="counts.critical" class="sigma-pill critical">Critical · {{ counts.critical }}</span>
+                            <span v-if="counts.high"     class="sigma-pill high">High · {{ counts.high }}</span>
+                            <span v-if="counts.medium"   class="sigma-pill medium">Medium · {{ counts.medium }}</span>
+                            <span v-if="counts.low"      class="sigma-pill low">Low · {{ counts.low }}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+
+                <!-- MalwareBazaar -->
+                <div v-if="activeHashResult.malwarebazaar?.queryStatus" class="vcard">
+                  <div class="vcard-head">
+                    <span class="vcard-title">🦠 MalwareBazaar</span>
+                    <div class="flex items-center gap-2">
+                      <span v-if="activeHashResult.malwarebazaar.queryStatus==='ok'" class="mb-found-badge">✓ Found</span>
+                      <span v-else class="mb-notfound-badge">Not Found</span>
                     </div>
                   </div>
-                  <div v-if="toArr(activeHashResult.virustotal.sandboxMalwareClassifications).length" class="mt-3">
-                    <div class="vt-subsection-label">Sandbox Classifications</div>
-                    <div class="flex flex-wrap gap-1 mt-1">
-                      <span v-for="s in toArr(activeHashResult.virustotal.sandboxMalwareClassifications)" :key="s" class="sandbox-badge">{{ s }}</span>
+                  <div class="vcard-body">
+                    <template v-if="activeHashResult.malwarebazaar.queryStatus==='ok'">
+                      <div v-if="activeHashResult.malwarebazaar.signature" class="kv">
+                        <span class="kv-key">Signature</span>
+                        <span class="kv-val font-bold" style="color:var(--r0)">{{ activeHashResult.malwarebazaar.signature }}</span>
+                      </div>
+                      <div v-if="activeHashResult.malwarebazaar.fileName" class="kv">
+                        <span class="kv-key">File Name</span><span class="kv-val">{{ activeHashResult.malwarebazaar.fileName }}</span>
+                      </div>
+                      <div v-if="activeHashResult.malwarebazaar.fileType" class="kv">
+                        <span class="kv-key">File Type</span>
+                        <span class="kv-val"><span class="filetype-badge">{{ activeHashResult.malwarebazaar.fileType }}</span></span>
+                      </div>
+                      <div v-if="activeHashResult.malwarebazaar.comment" class="kv" style="align-items:flex-start">
+                        <span class="kv-key" style="padding-top:2px">Comment</span>
+                        <span class="kv-val mb-comment">{{ activeHashResult.malwarebazaar.comment }}</span>
+                      </div>
+                      <div v-if="toArr(activeHashResult.malwarebazaar.tags).length" class="px-3 pb-3 pt-1 flex flex-wrap gap-1">
+                        <span v-for="tag in toArr(activeHashResult.malwarebazaar.tags)" :key="tag" class="hash-tag">{{ tag }}</span>
+                      </div>
+                    </template>
+                    <div v-else class="kv">
+                      <span class="kv-val text-t3 italic" style="font-size:0.66rem">
+                        {{ activeHashResult.malwarebazaar.queryStatus==='hash_not_found'?'Not indexed in MalwareBazaar.':activeHashResult.malwarebazaar.queryStatus }}
+                      </span>
                     </div>
                   </div>
-                  <div v-if="activeHashResult.virustotal.sigmaAnalysisSummary && Object.keys(activeHashResult.virustotal.sigmaAnalysisSummary).length" class="mt-3">
-                    <div class="vt-subsection-label">Sigma Rules</div>
-                    <div v-for="(counts, ruleset) in activeHashResult.virustotal.sigmaAnalysisSummary" :key="ruleset" class="sigma-block mt-1">
-                      <div class="sigma-ruleset">{{ ruleset }}</div>
-                      <div class="flex flex-wrap gap-1 mt-1">
-                        <span v-if="counts.critical" class="sigma-pill critical">🔴 Critical: {{ counts.critical }}</span>
-                        <span v-if="counts.high"     class="sigma-pill high"    >🟠 High: {{ counts.high }}</span>
-                        <span v-if="counts.medium"   class="sigma-pill medium"  >🟡 Medium: {{ counts.medium }}</span>
-                        <span v-if="counts.low"      class="sigma-pill low"     >🟢 Low: {{ counts.low }}</span>
+                </div>
+
+                <!-- ThreatFox hash -->
+                <div v-if="activeHashResult.threatfox" class="vcard">
+                  <div class="vcard-head">
+                    <span class="vcard-title">🦊 ThreatFox</span>
+                    <span v-if="activeHashResult.threatfox.queryStatus==='ok'" class="mb-found-badge">✓ Found</span>
+                    <span v-else class="mb-notfound-badge">{{ activeHashResult.threatfox.queryStatus||'No result' }}</span>
+                  </div>
+                  <div class="vcard-body">
+                    <template v-if="activeHashResult.threatfox.queryStatus==='ok' && activeHashResult.threatfox.iocs?.length">
+                      <div v-if="activeHashResult.threatfox.iocs[0].malware" class="kv">
+                        <span class="kv-key">Malware</span>
+                        <span class="kv-val font-bold" style="color:var(--r0)">{{ activeHashResult.threatfox.iocs[0].malware }}</span>
+                      </div>
+                      <div v-if="activeHashResult.threatfox.iocs[0].threatType" class="kv">
+                        <span class="kv-key">Threat Type</span><span class="kv-val">{{ activeHashResult.threatfox.iocs[0].threatType }}</span>
+                      </div>
+                      <div v-if="activeHashResult.threatfox.iocs[0].confidenceLevel!=null" class="kv">
+                        <span class="kv-key">Confidence</span>
+                        <span class="kv-val font-bold" :style="{color:activeHashResult.threatfox.iocs[0].confidenceLevel>=75?'var(--r0)':activeHashResult.threatfox.iocs[0].confidenceLevel>=50?'var(--r1)':'var(--r2)'}">
+                          {{ activeHashResult.threatfox.iocs[0].confidenceLevel }}%
+                        </span>
+                      </div>
+                      <div v-if="activeHashResult.threatfox.iocs[0].firstSeen" class="kv">
+                        <span class="kv-key">First Seen</span><span class="kv-val">{{ activeHashResult.threatfox.iocs[0].firstSeen }}</span>
+                      </div>
+                      <div v-if="activeHashResult.threatfox.iocs[0].tags?.length" class="px-3 pb-3 pt-1 flex flex-wrap gap-1">
+                        <span v-for="tag in activeHashResult.threatfox.iocs[0].tags" :key="tag" class="hash-tag">{{ tag }}</span>
+                      </div>
+                    </template>
+                    <div v-if="activeHashResult.threatfox.queryStatus!=='ok'" class="kv">
+                      <span class="kv-val text-t3 italic" style="font-size:0.66rem">
+                        {{ activeHashResult.threatfox.queryStatus==='no_results'?'No ThreatFox intelligence for this hash.':activeHashResult.threatfox.queryStatus }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+              </div><!-- /sub-grid -->
+
+              <!-- JSON panel -->
+              <div class="px-4 pb-4">
+                <div class="json-panel">
+                  <button class="hash-source-link float-right mb-2" @click="copyHashJSON">COPY</button>
+                  <pre><code v-html="highlightedHashJSON"></code></pre>
+                </div>
+              </div>
+
+            </div><!-- /hash-card -->
+          </div>
+
+          <div v-else-if="allHashResults[activeHashIdx]?.error" class="vcard animate-fade-up">
+            <div class="vcard-head"><span class="vcard-title">Error</span></div>
+            <div class="kv"><span class="kv-val" style="color:var(--r0)">{{ allHashResults[activeHashIdx].error }}</span></div>
+          </div>
+        </div>
+
+        <!-- ── HASH TABLE ── -->
+        <div v-show="hashView==='table'">
+          <results-table
+            :visible-cols="visibleHashTableCols" :sorted-rows="sortedHashRows"
+            :sort-col="hashSortCol" :sort-asc="hashSortAsc"
+            :render-cell="renderHashTableCell"
+            @sort="sortHashTable"
+            @row-click="row => { activeHashIdx = row._idx; setHashView('cards'); }">
+          </results-table>
+        </div>
+      </div>
+
+    </div><!-- /hash section -->
+    <!-- ══════════════════════════════════════════════════════════════════
+         DOMAIN SCAN
+    ══════════════════════════════════════════════════════════════════════ -->
+    <div v-show="currentIOCMode==='domain'">
+
+      <!-- Scan panel -->
+      <div class="border border-white/10 bg-ink1 p-3.5 rounded-md mb-5 transition-all">
+        <div class="flex gap-2.5">
+          <textarea v-model="domainInputText" rows="2"
+            class="flex-1 bg-ink2 border border-white/12 text-t1 font-mono text-sm px-3.5 py-2.5 rounded-sm resize-none outline-none transition-all focus:border-prime/40 leading-relaxed"
+            placeholder="evil.com, malware-c2.ru — one per line"
+            @keydown.enter.exact.prevent="doDomainScan"></textarea>
+          <div class="flex flex-col gap-2 flex-shrink-0 items-stretch">
+            <button class="bg-prime text-ink font-display font-bold tracking-widest text-sm px-6 rounded-sm flex-1 transition-all hover:bg-blue-400 shadow-prime hover:shadow-prime-lg"
+                    :disabled="isDomainLoading" @click="doDomainScan">SCAN</button>
+            <span v-if="isDomainLoading" class="loader self-center"></span>
+          </div>
+        </div>
+        <div class="flex items-center gap-2.5 mt-2.5 flex-wrap">
+          <div v-if="domainBulkCount" class="flex items-center gap-1.5 text-xs text-t2">
+            <span class="font-mono font-bold" style="color:var(--c)">{{ domainBulkCount }}</span> domains
+            <button class="px-2 py-0.5 rounded-pill border border-white/10 text-t3 text-xs hover:text-t1 transition-all" @click="clearDomainBulk">✕</button>
+          </div>
+          <label class="flex items-center gap-1.5 px-2.5 py-1 rounded-pill border border-white/10 text-t3 text-xs font-medium cursor-pointer hover:text-t1 transition-all">
+            ↑ Load File <input type="file" class="hidden" accept=".txt,.csv" @change="handleDomainFileUpload">
+          </label>
+          <div class="flex items-center gap-2 cursor-pointer ml-auto" @click="domainUseCache=!domainUseCache">
+            <button class="tog" :class="{on: domainUseCache}"></button>
+            <span class="text-xs text-t3 select-none">Cache</span>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="domainError" class="flex items-center gap-2 px-4 py-2.5 rounded-sm mb-4 text-sm animate-fade-up"
+           style="color:var(--r0);background:var(--r0a);border:1px solid rgba(252,129,129,0.25);border-left:2px solid var(--r0)">⚠ {{ domainError }}</div>
+
+      <div v-if="allDomainResults.length">
+        <!-- Toolbar -->
+        <div class="flex items-center gap-2 mb-4 flex-wrap animate-fade-up">
+          <div class="flex bg-ink2 border border-white/10 rounded-pill p-0.5 gap-0.5">
+            <button class="px-4 py-1.5 text-xs font-semibold tracking-widest uppercase rounded-pill transition-all"
+                    :class="domainView==='cards' ? 'bg-ink4 text-t1' : 'text-t3 hover:text-t2'"
+                    @click="setDomainView('cards')">Cards</button>
+            <button class="px-4 py-1.5 text-xs font-semibold tracking-widest uppercase rounded-pill transition-all"
+                    :class="domainView==='table' ? 'bg-ink4 text-t1' : 'text-t3 hover:text-t2'"
+                    @click="setDomainView('table')">Table</button>
+          </div>
+          <div class="flex items-center gap-1.5 ml-auto">
+            <button class="flex items-center gap-1 px-3 py-1.5 border border-white/12 text-t2 text-xs font-medium tracking-wide rounded-pill transition-all hover:border-prime/40 hover:text-prime hover:bg-prime-dim" @click="exportDomainCSV">↓ CSV</button>
+            <button class="flex items-center gap-1 px-3 py-1.5 border border-white/12 text-t2 text-xs font-medium tracking-wide rounded-pill transition-all hover:border-prime/40 hover:text-prime hover:bg-prime-dim" @click="exportDomainJSON">↓ JSON</button>
+          </div>
+        </div>
+
+        <!-- Domain chip tabs -->
+        <div v-if="allDomainResults.length > 1 && domainView==='cards'" class="flex flex-wrap gap-1.5 mb-5">
+          <div v-for="(e,i) in allDomainResults" :key="i"
+               class="ip-tab" :class="{active: i===activeDomainIdx}" @click="activeDomainIdx=i">
+            <span class="ip-tab-dot" :style="{background: riskDotColor((e.result||e).riskLevel)}"></span>
+            {{ (e.result||e).domain || e.ioc || '?' }}
+          </div>
+        </div>
+
+        <!-- Cards -->
+        <div v-show="domainView==='cards'">
+          <div v-if="activeDomainResult">
+            <div class="flex items-center gap-3 mb-5 flex-wrap animate-fade-up">
+              <span :class="['risk-pill','risk-'+(activeDomainResult.riskLevel||'CLEAN')]">{{ activeDomainResult.riskLevel || 'CLEAN' }}</span>
+              <span class="font-mono text-base text-t1">{{ activeDomainResult.domain }}</span>
+            </div>
+            <div class="grid gap-3 mb-4" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr))">
+
+              <!-- VT Domain card -->
+              <div v-if="activeDomainResult.vtDomain" class="vcard animate-fade-up">
+                <div class="vcard-head">
+                  <span class="vcard-title">🧪 VirusTotal</span>
+                  <div class="flex items-center gap-2">
+                    <span v-if="activeDomainResult.vtDomain.error" class="mb-notfound-badge">Error</span>
+                    <a v-if="domainResultLinks && domainResultLinks.virustotal"
+                       :href="domainResultLinks.virustotal" target="_blank" rel="noopener" class="vcard-link">↗ VirusTotal</a>
+                  </div>
+                </div>
+                <div class="vcard-body">
+                  <template v-if="!activeDomainResult.vtDomain.error">
+                    <div class="kv-row">
+                      <span class="kv-key">S / U / H</span>
+                      <span class="kv-val">{{ (activeDomainResult.vtDomain.suspicious||0)+' / '+(activeDomainResult.vtDomain.undetected||0)+' / '+(activeDomainResult.vtDomain.harmless||0) }}</span>
+                    </div>
+                    <div class="vt-pills" style="padding:8px 0 4px">
+                      <span class="vt-pill mal">Malicious · {{ activeDomainResult.vtDomain.malicious }}</span>
+                      <span class="vt-pill sus">Suspicious · {{ activeDomainResult.vtDomain.suspicious||0 }}</span>
+                      <span class="vt-pill ok">Harmless · {{ activeDomainResult.vtDomain.harmless||0 }}</span>
+                      <span class="vt-pill unk">Undetected · {{ activeDomainResult.vtDomain.undetected||0 }}</span>
+                    </div>
+                    <div v-if="activeDomainResult.vtDomain.suggestedThreatLabel" class="kv-row">
+                      <span class="kv-key">Threat</span>
+                      <span class="kv-val" style="color:var(--r0)">{{ activeDomainResult.vtDomain.suggestedThreatLabel }}</span>
+                    </div>
+                    <div v-if="activeDomainResult.vtDomain.reputation != null" class="kv-row">
+                      <span class="kv-key">Reputation</span>
+                      <span class="kv-val font-bold" :style="{color: activeDomainResult.vtDomain.reputation<0?'var(--r0)':activeDomainResult.vtDomain.reputation>0?'var(--r4)':'var(--t3)'}">
+                        {{ activeDomainResult.vtDomain.reputation>0?'+':'' }}{{ activeDomainResult.vtDomain.reputation }}
+                      </span>
+                    </div>
+                    <div v-if="activeDomainResult.vtDomain.registrar" class="kv-row">
+                      <span class="kv-key">Registrar</span><span class="kv-val">{{ activeDomainResult.vtDomain.registrar }}</span>
+                    </div>
+                    <div v-if="activeDomainResult.vtDomain.creationDate" class="kv-row">
+                      <span class="kv-key">Created</span><span class="kv-val">{{ activeDomainResult.vtDomain.creationDate }}</span>
+                    </div>
+                    <div v-if="activeDomainResult.vtDomain.aRecords && activeDomainResult.vtDomain.aRecords.length" class="kv-row" style="align-items:flex-start">
+                      <span class="kv-key" style="padding-top:2px">A Records</span>
+                      <span class="kv-val" style="font-size:0.65rem">{{ activeDomainResult.vtDomain.aRecords.join(', ') }}</span>
+                    </div>
+                    <div v-if="activeDomainResult.vtDomain.categories && activeDomainResult.vtDomain.categories.length"
+                         class="border-t border-white/6 pt-2 pb-1 mt-1">
+                      <div class="text-xs font-bold tracking-widest uppercase mb-1.5" style="color:#565e6e;font-size:0.54rem">Categories</div>
+                      <div class="flex flex-wrap gap-1">
+                        <span v-for="cat in activeDomainResult.vtDomain.categories" :key="cat"
+                              class="text-xs px-2 py-0.5 border rounded font-medium"
+                              style="color:#818cf8;border-color:rgba(129,140,248,0.28);background:rgba(129,140,248,0.08);font-size:0.6rem">{{ cat }}</span>
                       </div>
                     </div>
-                  </div>
-                </template>
-              </div>
-
-              <!-- MALWAREBAZAAR card -->
-              <div v-if="activeHashResult.malwarebazaar && activeHashResult.malwarebazaar.queryStatus" class="card">
-                <div class="card-head">
-                  <span class="card-head-left">🦠 MalwareBazaar</span>
-                  <div class="flex items-center gap-2">
-                    <span v-if="activeHashResult.malwarebazaar.queryStatus==='ok'" class="mb-found-badge">✓ Found</span>
-                    <span v-else class="mb-notfound-badge">✗ Not Found</span>
-                    <a v-if="hashResultLinks.malwarebazaar" :href="hashResultLinks.malwarebazaar" target="_blank" rel="noopener" class="card-source-link">↗ MB</a>
-                  </div>
-                </div>
-                <template v-if="activeHashResult.malwarebazaar.queryStatus === 'ok'">
-                  <div v-if="activeHashResult.malwarebazaar.signature" class="kv">
-                    <span class="kv-key">Signature</span>
-                    <span class="kv-val" style="color:var(--red);font-weight:600">{{ activeHashResult.malwarebazaar.signature }}</span>
-                  </div>
-                  <div v-if="activeHashResult.malwarebazaar.fileName" class="kv">
-                    <span class="kv-key">File Name</span><span class="kv-val">{{ activeHashResult.malwarebazaar.fileName }}</span>
-                  </div>
-                  <div v-if="activeHashResult.malwarebazaar.fileType" class="kv">
-                    <span class="kv-key">File Type</span>
-                    <span class="kv-val"><span class="filetype-badge">{{ activeHashResult.malwarebazaar.fileType }}</span></span>
-                  </div>
-                  <div v-if="activeHashResult.malwarebazaar.comment" class="kv" style="align-items:flex-start">
-                    <span class="kv-key" style="padding-top:2px">Comment</span>
-                    <span class="kv-val mb-comment">{{ activeHashResult.malwarebazaar.comment }}</span>
-                  </div>
-                  <div v-if="toArr(activeHashResult.malwarebazaar.tags).length" class="hash-tags">
-                    <span v-for="tag in toArr(activeHashResult.malwarebazaar.tags)" :key="tag" class="hash-tag">{{ tag }}</span>
-                  </div>
-                </template>
-                <div v-else class="kv mt-2">
-                  <span class="kv-val" style="color:var(--muted);font-style:italic;font-size:0.68rem">
-                    {{ activeHashResult.malwarebazaar.queryStatus === 'hash_not_found' ? 'This hash is not indexed in MalwareBazaar.' : activeHashResult.malwarebazaar.queryStatus }}
-                  </span>
+                  </template>
+                  <div v-else class="kv-row"><span class="kv-val text-t3 italic text-xs">{{ activeDomainResult.vtDomain.error }}</span></div>
                 </div>
               </div>
 
-              <!-- THREATFOX card (hash mode) -->
-              <div v-if="activeHashResult.threatfox" class="card">
-                <div class="card-head">
-                  <span class="card-head-left">🦊 ThreatFox</span>
+              <!-- ThreatFox Domain card -->
+              <div v-if="activeDomainResult.threatfox && activeDomainResult.threatfox.queryStatus !== 'error'" class="vcard animate-fade-up-2">
+                <div class="vcard-head">
+                  <span class="vcard-title">🦊 ThreatFox</span>
                   <div class="flex items-center gap-2">
-                    <span v-if="activeHashResult.threatfox.queryStatus === 'ok'" class="mb-found-badge">✓ Found</span>
-                    <span v-else class="mb-notfound-badge">✗ {{ activeHashResult.threatfox.queryStatus || 'No Result' }}</span>
-                    <a :href="'https://threatfox.abuse.ch/browse.php?search=ioc%3A'+(activeHashResult.virustotal.sha256||activeHashResult.virustotal.md5||'')" target="_blank" rel="noopener" class="card-source-link">↗ ThreatFox</a>
+                    <span v-if="activeDomainResult.threatfox.queryStatus==='ok'" class="mb-found-badge">✓ Found</span>
+                    <span v-else class="mb-notfound-badge">{{ activeDomainResult.threatfox.queryStatus || 'No result' }}</span>
+                    <a :href="'https://threatfox.abuse.ch/browse.php?search=ioc%3A'+activeDomainResult.domain"
+                       target="_blank" rel="noopener" class="vcard-link">↗ ThreatFox</a>
                   </div>
                 </div>
-                <template v-if="activeHashResult.threatfox.queryStatus === 'ok' && activeHashResult.threatfox.iocs && activeHashResult.threatfox.iocs.length">
-                  <div v-if="activeHashResult.threatfox.iocs[0].malware" class="kv">
-                    <span class="kv-key">Malware</span>
-                    <span class="kv-val" style="color:var(--red);font-weight:600">{{ activeHashResult.threatfox.iocs[0].malware }}</span>
-                  </div>
-                  <div v-if="activeHashResult.threatfox.iocs[0].threatType" class="kv">
-                    <span class="kv-key">Threat Type</span><span class="kv-val">{{ activeHashResult.threatfox.iocs[0].threatType }}</span>
-                  </div>
-                  <div v-if="activeHashResult.threatfox.iocs[0].malwareAlias" class="kv">
-                    <span class="kv-key">Aliases</span>
-                    <span class="kv-val" style="color:var(--text1);font-size:0.68rem">{{ activeHashResult.threatfox.iocs[0].malwareAlias }}</span>
-                  </div>
-                  <div v-if="activeHashResult.threatfox.iocs[0].confidenceLevel != null" class="kv">
-                    <span class="kv-key">Confidence</span>
-                    <span class="kv-val" :style="{color: activeHashResult.threatfox.iocs[0].confidenceLevel >= 75 ? 'var(--red)' : activeHashResult.threatfox.iocs[0].confidenceLevel >= 50 ? 'var(--orange)' : 'var(--yellow)', fontWeight:600}">
-                      {{ activeHashResult.threatfox.iocs[0].confidenceLevel }}%
+                <div class="vcard-body">
+                  <template v-if="activeDomainResult.threatfox.queryStatus==='ok'">
+                    <div v-if="activeDomainResult.threatfox.malware" class="kv-row">
+                      <span class="kv-key">Malware</span>
+                      <span class="kv-val font-bold" style="color:var(--r0)">{{ activeDomainResult.threatfox.malware }}</span>
+                    </div>
+                    <div v-if="activeDomainResult.threatfox.threatType" class="kv-row">
+                      <span class="kv-key">Threat Type</span><span class="kv-val">{{ activeDomainResult.threatfox.threatType }}</span>
+                    </div>
+                    <div v-if="activeDomainResult.threatfox.confidenceLevel != null" class="kv-row">
+                      <span class="kv-key">Confidence</span>
+                      <span class="kv-val font-bold" :style="{color: activeDomainResult.threatfox.confidenceLevel>=75?'var(--r0)':activeDomainResult.threatfox.confidenceLevel>=50?'var(--r1)':'var(--r2)'}">
+                        {{ activeDomainResult.threatfox.confidenceLevel }}%
+                      </span>
+                    </div>
+                    <div v-if="activeDomainResult.threatfox.firstSeen" class="kv-row">
+                      <span class="kv-key">First Seen</span><span class="kv-val">{{ activeDomainResult.threatfox.firstSeen }}</span>
+                    </div>
+                    <div v-if="activeDomainResult.threatfox.reporter" class="kv-row">
+                      <span class="kv-key">Reporter</span><span class="kv-val">{{ activeDomainResult.threatfox.reporter }}</span>
+                    </div>
+                    <div v-if="activeDomainResult.threatfox.tags && activeDomainResult.threatfox.tags.length"
+                         class="flex flex-wrap gap-1 pt-2 mt-1 border-t border-white/6">
+                      <span v-for="tag in activeDomainResult.threatfox.tags" :key="tag" class="hash-tag">{{ tag }}</span>
+                    </div>
+                  </template>
+                  <div v-if="activeDomainResult.threatfox.queryStatus !== 'ok'" class="kv-row">
+                    <span class="kv-val text-t3 italic text-xs">
+                      {{ activeDomainResult.threatfox.queryStatus==='no_results' ? 'No ThreatFox intelligence for this domain.' : activeDomainResult.threatfox.queryStatus }}
                     </span>
                   </div>
-                  <div v-if="activeHashResult.threatfox.iocs[0].firstSeen" class="kv">
-                    <span class="kv-key">First Seen</span><span class="kv-val">{{ activeHashResult.threatfox.iocs[0].firstSeen }}</span>
-                  </div>
-                  <div v-if="activeHashResult.threatfox.iocs[0].tags && activeHashResult.threatfox.iocs[0].tags.length" class="hash-tags mt-2">
-                    <span v-for="tag in activeHashResult.threatfox.iocs[0].tags" :key="tag" class="hash-tag">{{ tag }}</span>
-                  </div>
-                  <div v-if="activeHashResult.threatfox.iocs.length > 1" class="mt-3">
-                    <div class="vt-subsection-label">Associated IOCs ({{ activeHashResult.threatfox.iocs.length }})</div>
-                    <div v-for="entry in activeHashResult.threatfox.iocs" :key="entry.ioc" class="kv mt-1">
-                      <span class="kv-key" style="font-size:0.58rem">IOC</span>
-                      <span class="kv-val" style="font-size:0.62rem;word-break:break-all;color:var(--text1)">{{ entry.ioc }}</span>
-                    </div>
-                  </div>
-                </template>
-                <div v-if="activeHashResult.threatfox.queryStatus !== 'ok'" class="kv mt-2">
-                  <span class="kv-val" style="color:var(--muted);font-style:italic;font-size:0.68rem">
-                    {{ activeHashResult.threatfox.queryStatus === 'no_results' ? 'No ThreatFox intelligence for this hash.' : activeHashResult.threatfox.queryStatus }}
-                  </span>
                 </div>
               </div>
 
             </div><!-- /cards grid -->
 
-            <!-- Raw JSON panel -->
-            <div class="json-panel mt-4">
-              <button class="copy-btn" @click="copyHashJSON">COPY JSON</button>
-              <pre><code v-html="highlightedHashJSON"></code></pre>
-            </div>
-
-          </div><!-- /hash-result-card -->
-          <div v-else-if="allHashResults[activeHashIdx] && allHashResults[activeHashIdx].error" class="card">
-            <div class="card-head">Error</div>
-            <div style="color:var(--red)">{{ allHashResults[activeHashIdx].error }}</div>
-          </div>
-        </div>
-
-        <!-- Hash Table view -->
-        <div v-show="hashView==='table'">
-          <results-table
-            :visible-cols="visibleHashTableCols"
-            :sorted-rows="sortedHashRows"
-            :sort-col="hashSortCol"
-            :sort-asc="hashSortAsc"
-            :render-cell="renderHashTableCell"
-            @sort="sortHashTable"
-            @row-click="row => { activeHashIdx = row._idx; setHashView('cards'); }"
-          ></results-table>
-        </div>
-      </div>
-    </div>
-
-    <!-- ══ DOMAIN SCAN SECTION ═════════════════════════════════════════════ -->
-    <div v-show="currentIOCMode==='domain'">
-      <div class="border p-4 mb-6" style="border-color:#1e2d42;background:#0d1320;border-top:2px solid #34d399">
-        <div class="flex gap-3" style="align-items:stretch">
-          <textarea id="domainInput" v-model="domainInputText" class="scan-input" rows="3"
-            placeholder="evil.com, malware-c2.ru — one per line or comma-separated"
-            style="flex:1;min-width:0" @keydown.enter.exact.prevent="doDomainScan"></textarea>
-          <div class="flex flex-col gap-2" style="flex-shrink:0">
-            <div class="flex gap-2 items-center">
-              <button class="scan-btn" :disabled="isDomainLoading" @click="doDomainScan" style="flex:1">SCAN</button>
-              <span v-if="isDomainLoading" class="loader"></span>
-            </div>
-          </div>
-        </div>
-        <div v-if="domainBulkCount" class="bulk-preview mt-2">
-          <span style="color:#34d399">📋</span>
-          <span><span style="color:#cbd5e1;font-weight:600">{{ domainBulkCount }}</span> domains detected</span>
-          <button class="action-btn" @click="clearDomainBulk">✕ Clear</button>
-        </div>
-        <div class="flex items-center gap-3 mt-3 pt-3 border-t" style="border-color:#1e2d42">
-          <label class="action-btn cursor-pointer">
-            📁 Load File <input type="file" class="hidden" accept=".txt,.csv,.log" @change="handleDomainFileUpload">
-          </label>
-          <div class="flex items-center gap-2" style="cursor:pointer" @click="domainUseCache=!domainUseCache">
-            <button class="tog" :class="{on: domainUseCache}" style="cursor:pointer"></button>
-            <span style="font-size:0.68rem;color:#4d6480;user-select:none">Use Cache</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Error -->
-      <div v-if="domainError" class="err-box mb-4">❌ {{ domainError }}</div>
-
-      <!-- Domain Results -->
-      <div v-if="allDomainResults.length">
-        <div id="domain-results-bar" class="flex items-center justify-between flex-wrap gap-3 mb-4">
-          <div class="flex gap-0">
-            <button class="view-btn" :class="{active: domainView==='cards'}" @click="setDomainView('cards')">Cards</button>
-            <button class="view-btn" :class="{active: domainView==='table'}" @click="setDomainView('table')">Table</button>
-          </div>
-          <div class="flex items-center gap-2">
-            <button class="export-btn" @click="exportDomainCSV">↓ CSV</button>
-            <button class="export-btn" @click="exportDomainJSON">↓ JSON</button>
-          </div>
-        </div>
-
-        <!-- Domain chip tabs (multi-domain, cards view) -->
-        <div v-if="allDomainResults.length > 1 && domainView==='cards'" class="flex flex-wrap gap-1 mb-4">
-          <div v-for="(e, i) in allDomainResults" :key="i"
-               class="ip-tab" :class="{active: i===activeDomainIdx}" @click="activeDomainIdx=i">
-            <span class="ip-tab-dot" :style="{background: riskDotColor((e.result||e).riskLevel)}"></span>
-            {{ e.ioc || (e.result||e).domain || '?' }}
-          </div>
-        </div>
-
-        <!-- Domain Cards view -->
-        <div v-show="domainView==='cards'">
-          <div v-if="activeDomainResult">
-            <!-- Header -->
-            <div class="mb-4 flex items-center gap-3 flex-wrap">
-              <span :class="['risk-pill', 'risk-'+(activeDomainResult.riskLevel||'CLEAN')]">
-                {{ activeDomainResult.riskLevel || 'CLEAN' }}
-              </span>
-              <span style="font-family:'JetBrains Mono',monospace;font-size:0.85rem;color:#e2e8f0">
-                {{ activeDomainResult.domain || allDomainResults[activeDomainIdx]?.ioc || '—' }}
-              </span>
-            </div>
-
-            <div class="cards">
-              <!-- VirusTotal Domain card -->
-              <div v-if="activeDomainResult.vtDomain || activeDomainResult.virustotal" class="card">
-                <div class="card-head">
-                  <span class="card-head-left">🧪 VirusTotal</span>
-                  <a v-if="domainResultLinks.virustotal" :href="domainResultLinks.virustotal"
-                     target="_blank" rel="noopener" class="card-source-link">↗ VirusTotal</a>
-                </div>
-                <div class="vt-pills mt-2">
-                  <span class="vt-pill mal">🔴 Malicious: {{ (activeDomainResult.vtDomain||activeDomainResult.virustotal)?.malicious ?? 0 }}</span>
-                  <span class="vt-pill sus">🟡 Suspicious: {{ (activeDomainResult.vtDomain||activeDomainResult.virustotal)?.suspicious ?? 0 }}</span>
-                  <span class="vt-pill ok">🟢 Harmless: {{ (activeDomainResult.vtDomain||activeDomainResult.virustotal)?.harmless ?? 0 }}</span>
-                  <span class="vt-pill unk">⬜ Undetected: {{ (activeDomainResult.vtDomain||activeDomainResult.virustotal)?.undetected ?? 0 }}</span>
-                </div>
-                <template v-if="activeDomainResult.vtDomain">
-                  <div v-if="activeDomainResult.vtDomain.suggestedThreatLabel" class="kv mt-2">
-                    <span class="kv-key">Threat Label</span>
-                    <span class="kv-val" style="color:var(--red)">{{ activeDomainResult.vtDomain.suggestedThreatLabel }}</span>
-                  </div>
-                  <div v-if="activeDomainResult.vtDomain.registrar" class="kv">
-                    <span class="kv-key">Registrar</span>
-                    <span class="kv-val">{{ activeDomainResult.vtDomain.registrar }}</span>
-                  </div>
-                  <div v-if="activeDomainResult.vtDomain.creationDate" class="kv">
-                    <span class="kv-key">Created</span>
-                    <span class="kv-val">{{ activeDomainResult.vtDomain.creationDate }}</span>
-                  </div>
-                  <div v-if="activeDomainResult.vtDomain.categories && Object.keys(activeDomainResult.vtDomain.categories).length" class="mt-3">
-                    <div class="vt-subsection-label">Categories</div>
-                    <div class="flex flex-wrap gap-1 mt-1">
-                      <span v-for="(cat, engine) in activeDomainResult.vtDomain.categories" :key="engine"
-                            class="hash-tag" :title="engine">{{ cat }}</span>
-                    </div>
-                  </div>
-                </template>
-              </div>
-
-              <!-- ThreatFox Domain card -->
-              <div v-if="activeDomainResult.threatfox" class="card">
-                <div class="card-head">
-                  <span class="card-head-left">🦊 ThreatFox</span>
-                  <div class="flex items-center gap-2">
-                    <span v-if="activeDomainResult.threatfox.queryStatus==='ok'" class="mb-found-badge">✓ Found</span>
-                    <span v-else class="mb-notfound-badge">✗ {{ activeDomainResult.threatfox.queryStatus || 'No Result' }}</span>
-                    <a v-if="domainResultLinks.threatfox" :href="domainResultLinks.threatfox"
-                       target="_blank" rel="noopener" class="card-source-link">↗ ThreatFox</a>
-                  </div>
-                </div>
-                <template v-if="activeDomainResult.threatfox.queryStatus==='ok'">
-                  <div v-if="activeDomainResult.threatfox.malware" class="kv">
-                    <span class="kv-key">Malware</span>
-                    <span class="kv-val" style="color:var(--red);font-weight:600">{{ activeDomainResult.threatfox.malware }}</span>
-                  </div>
-                  <div v-if="activeDomainResult.threatfox.threatType" class="kv">
-                    <span class="kv-key">Threat Type</span>
-                    <span class="kv-val">{{ activeDomainResult.threatfox.threatType }}</span>
-                  </div>
-                  <div v-if="activeDomainResult.threatfox.confidenceLevel != null" class="kv">
-                    <span class="kv-key">Confidence</span>
-                    <span class="kv-val" :style="{color: activeDomainResult.threatfox.confidenceLevel >= 75 ? 'var(--red)' : 'var(--yellow)', fontWeight:600}">
-                      {{ activeDomainResult.threatfox.confidenceLevel }}%
-                    </span>
-                  </div>
-                  <div v-if="activeDomainResult.threatfox.firstSeen" class="kv">
-                    <span class="kv-key">First Seen</span>
-                    <span class="kv-val">{{ activeDomainResult.threatfox.firstSeen }}</span>
-                  </div>
-                  <div v-if="activeDomainResult.threatfox.tags && activeDomainResult.threatfox.tags.length" class="hash-tags mt-2">
-                    <span v-for="tag in activeDomainResult.threatfox.tags" :key="tag" class="hash-tag">{{ tag }}</span>
-                  </div>
-                </template>
-                <div v-else class="kv mt-2">
-                  <span class="kv-val" style="color:var(--muted);font-style:italic;font-size:0.68rem">
-                    No ThreatFox intelligence for this domain.
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Raw JSON panel -->
-            <div class="json-panel mt-4">
-              <button class="copy-btn" @click="copyDomainJSON(activeDomainResult)">COPY JSON</button>
+            <div class="json-panel animate-fade-up">
+              <button class="float-right mb-2 px-2.5 py-0.5 border border-white/10 rounded text-t3 font-mono text-xs tracking-widest transition-all hover:border-prime/40 hover:text-prime"
+                      @click="copyDomainJSON">COPY</button>
               <pre><code v-html="highlightedDomainJSON"></code></pre>
             </div>
           </div>
 
-          <!-- Error state -->
-          <div v-else-if="allDomainResults[activeDomainIdx] && allDomainResults[activeDomainIdx].error" class="card">
-            <div class="card-head">Error</div>
-            <div style="color:var(--red)">{{ allDomainResults[activeDomainIdx].error }}</div>
+          <div v-else-if="activeDomainEntry && activeDomainEntry.error" class="vcard animate-fade-up">
+            <div class="vcard-head"><span class="vcard-title">Error</span></div>
+            <div class="vcard-body"><span class="kv-val" style="color:var(--r0)">{{ activeDomainEntry.error }}</span></div>
           </div>
         </div>
 
-        <!-- Domain Table view -->
-        <div v-show="domainView==='table'">
+        <!-- Table view -->
+        <div v-show="domainView==='table'" class="overflow-x-auto animate-fade-up">
           <results-table
-            :visible-cols="visibleDomainTableCols"
-            :sorted-rows="sortedDomainRows"
-            :sort-col="domainSortCol"
-            :sort-asc="domainSortAsc"
+            :visible-cols="visibleDomainTableCols" :sorted-rows="sortedDomainRows"
+            :sort-col="domainSortCol" :sort-asc="domainSortAsc"
             :render-cell="renderDomainTableCell"
             @sort="sortDomainTable"
-            @row-click="row => { activeDomainIdx = row._idx; setDomainView('cards'); }"
-          ></results-table>
+            @row-click="row => { activeDomainIdx=row._idx; setDomainView('cards'); }">
+          </results-table>
         </div>
       </div>
-    </div>
 
+    </div><!-- /domain -->
 
-  </div>
-  `,
+  </div><!-- /page body -->
+
+  `
 });
