@@ -6,7 +6,8 @@
 
 // ── Namespace imports for functions we wrap (avoids redeclaration errors) ─────
 import * as IPResults   from './useIPResults.js';
-import * as HashResults from './useHashResults.js';
+import * as HashResults   from './useHashResults.js';
+import * as DomainResults from './useDomainResults.js';
 
 import {
     colVisible, fieldVisible,
@@ -29,7 +30,7 @@ const { ref, reactive, computed, watch, nextTick } = Vue;
 
 // ─── Core state ───────────────────────────────────────────────────────────────
 
-export const keys          = reactive({ vt: '', abuse: '', ipapi: '', abusech: '' });
+export const keys          = reactive({ vt: '', abuse: '', ipapi: '', abusech: '', greynoise: '' });
 export const ipInputText   = ref('');
 export const hashInputText = ref('');
 export const ipUseCache    = ref(true);
@@ -51,7 +52,8 @@ export const hashCopyMenuOpen = ref(false);
 
 export const wideShell = computed(() =>
     (currentView.value === 'table' && currentIOCMode.value === 'ip') ||
-    (hashView.value    === 'table' && currentIOCMode.value === 'hash')
+    (hashView.value    === 'table' && currentIOCMode.value === 'hash') ||
+    (DomainResults.domainView.value === 'table' && currentIOCMode.value === 'domain')
 );
 
 export const colBadge = computed(() => makeColBadge(currentIOCMode.value));
@@ -131,11 +133,35 @@ export const extractHashes         = HashResults.extractHashes;
 export const copyHashJSON          = HashResults.copyHashJSON;
 export const exportHashCSV         = HashResults.exportHashCSV;
 export const exportHashJSON        = HashResults.exportHashJSON;
+// Domain results — re-exported individually
+export const allDomainResults      = DomainResults.allDomainResults;
+export const activeDomainIdx       = DomainResults.activeDomainIdx;
+export const domainSortCol         = DomainResults.domainSortCol;
+export const domainSortAsc         = DomainResults.domainSortAsc;
+export const domainError           = DomainResults.domainError;
+export const domainBulkCount       = DomainResults.domainBulkCount;
+export const isDomainLoading       = DomainResults.isDomainLoading;
+export const domainInputText       = DomainResults.domainInputText;
+export const domainUseCache        = DomainResults.domainUseCache;
+export const domainView            = DomainResults.domainView;
+export const activeDomainEntry     = DomainResults.activeDomainEntry;
+export const activeDomainResult    = DomainResults.activeDomainResult;
+export const domainResultLinks     = DomainResults.domainResultLinks;
+export const highlightedDomainJSON = DomainResults.highlightedDomainJSON;
+export const visibleDomainTableCols = DomainResults.visibleDomainTableCols;
+export const sortedDomainRows      = DomainResults.sortedDomainRows;
+export const sortDomainTable       = DomainResults.sortDomainTable;
+export const renderDomainTableCell = DomainResults.renderDomainTableCell;
+export const extractDomains        = DomainResults.extractDomains;
+export const copyDomainJSON        = DomainResults.copyDomainJSON;
+export const exportDomainCSV       = DomainResults.exportDomainCSV;
+export const exportDomainJSON      = DomainResults.exportDomainJSON;
 
 // ─── Wrappers (call sub-composable functions, need refs from this file) ───────
 
 export function clearIPBulk()             { IPResults.clearIPBulk(ipInputText); }
 export function clearHashBulk()           { HashResults.clearHashBulk(hashInputText); }
+export function clearDomainBulk()         { DomainResults.clearDomainBulk(DomainResults.domainInputText); }
 export function copyClipboard(format)     { return IPResults.copyClipboard(format, copyMenuOpen); }
 export function copyHashClipboard(format) { return HashResults.copyHashClipboard(format, hashCopyMenuOpen); }
 
@@ -163,6 +189,19 @@ export function handleIPDrop(e) {
         if (!ips.length) { IPResults.ipError.value = 'No valid IPs found.'; return; }
         ipInputText.value = ips.join('\n');
         IPResults.ipBulkCount.value = ips.length;
+    };
+    reader.readAsText(file);
+}
+
+export function handleDomainFileUpload(event) {
+    const file = event.target.files[0]; if (!file) return;
+    event.target.value = '';
+    const reader = new FileReader();
+    reader.onload = e => {
+        const domains = DomainResults.extractDomains(e.target.result);
+        if (!domains.length) { DomainResults.domainError.value = 'No valid domains found in file.'; return; }
+        DomainResults.domainInputText.value = domains.join('\n');
+        DomainResults.domainBulkCount.value = domains.length;
     };
     reader.readAsText(file);
 }
@@ -240,6 +279,7 @@ export async function doIPScan() {
                 ip,
                 vt_key: keys.vt, abuse_key: keys.abuse,
                 ipapi_key: keys.ipapi, abusech_key: keys.abusech,
+                greynoise_key: keys.greynoise,
                 use_cache: ipUseCache.value,
             }),
         });
@@ -288,9 +328,48 @@ export async function doHashScanAction() {
     }
 }
 
+// ─── Domain scan ──────────────────────────────────────────────────────────────
+
+export async function doDomainScan() {
+    const raw = DomainResults.domainInputText.value.trim();
+    if (!raw) { DomainResults.domainError.value = 'Enter at least one domain.'; return; }
+    const domains = DomainResults.extractDomains(raw);
+    if (!domains.length) { DomainResults.domainError.value = 'No valid domains found.'; return; }
+    DomainResults.domainError.value = '';
+    DomainResults.isDomainLoading.value = true;
+    try {
+        const resp = await fetch('/api/scan/ioc', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                iocs: domains,
+                vt_key: keys.vt, abusech_key: keys.abusech,
+                greynoise_key: keys.greynoise,
+                use_cache: DomainResults.domainUseCache.value,
+            }),
+        });
+        if (!resp.ok) { const t = await resp.text(); throw new Error(t || resp.statusText); }
+        const data = await resp.json();
+        DomainResults.allDomainResults.value = data;
+        DomainResults.activeDomainIdx.value  = 0;
+        data.forEach(e => {
+            const r = e.result || e;
+            addHist(e.ioc || r.domain || '?', r.riskLevel || (e.error ? 'ERROR' : 'UNKNOWN'), 'domain');
+        });
+    } catch (err) {
+        DomainResults.domainError.value = 'Domain scan error: ' + err.message;
+    } finally {
+        DomainResults.isDomainLoading.value = false;
+        nextTick(() => { document.getElementById('domain-results-bar')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); });
+    }
+}
+
+export function setDomainView(mode) { DomainResults.domainView.value = mode; }
+
 // ─── Register reScan + reactive watches ──────────────────────────────────────
 
 registerReScan(ioc => { ipInputText.value = ioc; doIPScan(); });
 
 watch(ipInputText,   v => { IPResults.ipBulkCount.value   = v.trim() ? IPResults.extractIPs(v).length   : 0; });
 watch(hashInputText, v => { HashResults.hashBulkCount.value = v.trim() ? HashResults.extractHashes(v).length : 0; });
+watch(DomainResults.domainInputText, v => { DomainResults.domainBulkCount.value = v.trim() ? DomainResults.extractDomains(v).length : 0; });

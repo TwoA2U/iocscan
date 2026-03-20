@@ -25,6 +25,7 @@ import (
 // compatibility with /api/scan.
 func (p *IPProcessor) Lookup(ctx context.Context, ip string, useCache bool) (string, error) {
 	keys := BuildKeys(p.vtKey, p.abuseKey, p.ipapiKey, p.abusechKey)
+	keys["greynoise"] = p.greynoiseKey
 
 	sr, err := Scan(ctx, ip, integrations.IOCTypeIP, keys, useCache)
 	if err != nil {
@@ -116,6 +117,20 @@ func buildComplexResult(ip string, sr *ScanResult) ComplexResult {
 		result.ThreatFox = tf
 	} else if _, hasErr := sr.Errors["threatfox_ip"]; hasErr {
 		result.ThreatFox = &integrations.TFIPResult{QueryStatus: "error"}
+	}
+
+	// ── GreyNoise ────────────────────────────────────────────────────────────
+	if f, ok := sr.Results["greynoise"]; ok {
+		result.GreyNoise = &GNResult{
+			Classification: strField(f, "classification"),
+			Noise:          boolField(f, "noise"),
+			Riot:           boolField(f, "riot"),
+			Name:           strField(f, "name"),
+			LastSeen:       strField(f, "lastSeen"),
+			NotObserved:    boolField(f, "notObserved"),
+		}
+	} else if errMsg, hasErr := sr.Errors["greynoise"]; hasErr {
+		result.GreyNoise = &GNResult{Error: errMsg}
 	}
 
 	return result

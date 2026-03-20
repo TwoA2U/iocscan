@@ -56,19 +56,38 @@ type ComplexResult struct {
 	VirusTotal integrations.IPVirusTotal `json:"virustotal"`
 	AbuseIPDB  integrations.IPAbuseIPDB  `json:"abuseipdb"`
 	ThreatFox  *integrations.TFIPResult  `json:"threatfox,omitempty"`
+	GreyNoise  *GNResult                 `json:"greynoise,omitempty"`
+}
+
+// GNResult holds GreyNoise enrichment fields in an IP scan result.
+type GNResult struct {
+	Classification string `json:"classification,omitempty"`
+	Noise          bool   `json:"noise"`
+	Riot           bool   `json:"riot"`
+	Name           string `json:"name,omitempty"`
+	LastSeen       string `json:"lastSeen,omitempty"`
+	NotObserved    bool   `json:"notObserved,omitempty"`
+	Error          string `json:"error,omitempty"`
 }
 
 // ── IPProcessor ───────────────────────────────────────────────────────────────
 
 type IPProcessor struct {
-	vtKey      string
-	abuseKey   string
-	ipapiKey   string
-	abusechKey string
+	vtKey        string
+	abuseKey     string
+	ipapiKey     string
+	abusechKey   string
+	greynoiseKey string
 }
 
-func NewIPProcessor(vtKey, abuseKey, ipapiKey, abusechKey string) *IPProcessor {
-	return &IPProcessor{vtKey: vtKey, abuseKey: abuseKey, ipapiKey: ipapiKey, abusechKey: abusechKey}
+func NewIPProcessor(vtKey, abuseKey, ipapiKey, abusechKey, greynoiseKey string) *IPProcessor {
+	return &IPProcessor{
+		vtKey:        vtKey,
+		abuseKey:     abuseKey,
+		ipapiKey:     ipapiKey,
+		abusechKey:   abusechKey,
+		greynoiseKey: greynoiseKey,
+	}
 }
 
 // CheckIP parses and validates one or more IP addresses from a raw string.

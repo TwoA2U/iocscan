@@ -36,14 +36,18 @@ func All() []Integration {
 			&AbuseIPDBIntegration{},
 			&IPAPIIntegration{},
 			&ThreatFoxIPIntegration{},
+			&GreyNoise{},
 
 			// ── Hash integrations ─────────────────────────────────────────
 			&VirusTotalHash{},
 			&MalwareBazaarIntegration{},
 			&ThreatFoxHashIntegration{},
 
+			// ── Domain integrations ───────────────────────────────────────
+			&VirusTotalDomain{},
+			&ThreatFoxDomainIntegration{},
+
 			// ── Future integrations (uncomment to enable) ─────────────────
-			// &GreyNoise{},
 			// &Shodan{},
 			// &OTX{},
 			// &URLHaus{},

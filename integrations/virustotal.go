@@ -18,13 +18,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/TwoA2U/iocscan/internal/httpclient"
 )
 
 const (
-	vtEndpointIP   = "https://www.virustotal.com/api/v3/ip_addresses/"
-	vtEndpointHash = "https://www.virustotal.com/api/v3/files/"
+	vtEndpointIP     = "https://www.virustotal.com/api/v3/ip_addresses/"
+	vtEndpointHash   = "https://www.virustotal.com/api/v3/files/"
+	vtEndpointDomain = "https://www.virustotal.com/api/v3/domains/"
 )
 
 // ── Raw API response types ────────────────────────────────────────────────────
@@ -536,4 +538,158 @@ func vtHashToResult(h HashVirusTotal) *Result {
 		fields["signerValidTo"] = h.SignerDetail.ValidTo
 	}
 	return &Result{Fields: fields}
+}
+
+// ── Domain types ──────────────────────────────────────────────────────────────
+
+// VTDomainAttr holds the attributes block from a VT domain response.
+// Detection stats mirror VTFileAttr; additional domain-specific fields added.
+type VTDomainAttr struct {
+	LastAnalysisStats struct {
+		Harmless   int `json:"harmless"`
+		Malicious  int `json:"malicious"`
+		Suspicious int `json:"suspicious"`
+		Undetected int `json:"undetected"`
+	} `json:"last_analysis_stats"`
+	Reputation                  int               `json:"reputation"`
+	Categories                  map[string]string `json:"categories"`
+	Registrar                   string            `json:"registrar"`
+	CreationDate                int64             `json:"creation_date"`
+	PopularThreatClassification struct {
+		SuggestedThreatLabel string `json:"suggested_threat_label"`
+	} `json:"popular_threat_classification"`
+}
+
+// VTDomainResponse is the raw API response for a domain lookup.
+type VTDomainResponse struct {
+	Data struct {
+		Attributes VTDomainAttr `json:"attributes"`
+	} `json:"data"`
+}
+
+// HashDomainVirusTotal holds the VT enrichment for a domain result.
+type HashDomainVirusTotal struct {
+	Malicious            int               `json:"malicious"`
+	Suspicious           int               `json:"suspicious"`
+	Harmless             int               `json:"harmless"`
+	Undetected           int               `json:"undetected"`
+	Reputation           int               `json:"reputation"`
+	SuggestedThreatLabel string            `json:"suggestedThreatLabel,omitempty"`
+	Categories           map[string]string `json:"categories,omitempty"`
+	Registrar            string            `json:"registrar,omitempty"`
+	CreationDate         string            `json:"creationDate,omitempty"`
+	Error                string            `json:"error,omitempty"`
+}
+
+// ── Domain fetch ──────────────────────────────────────────────────────────────
+
+// FetchVTDomain queries VirusTotal for a domain name.
+func FetchVTDomain(ctx context.Context, domain, apiKey string) (*VTDomainResponse, error) {
+	if apiKey == "" {
+		return nil, fmt.Errorf("VirusTotal API key not provided")
+	}
+	raw, err := httpclient.DoGetCtx(ctx, vtEndpointDomain+domain,
+		map[string]string{"x-apikey": apiKey})
+	if err != nil {
+		return nil, fmt.Errorf("VT domain: %w", err)
+	}
+	var r VTDomainResponse
+	if err := json.Unmarshal(raw, &r); err != nil {
+		return nil, fmt.Errorf("VT domain parse: %w", err)
+	}
+	return &r, nil
+}
+
+// ── Domain integration wrapper ────────────────────────────────────────────────
+
+// VirusTotalDomain implements Integration for domain IOC types.
+type VirusTotalDomain struct{}
+
+func (v VirusTotalDomain) Manifest() Manifest {
+	return Manifest{
+		Name:     "virustotal_domain",
+		Label:    "VirusTotal",
+		Icon:     "🧪",
+		Enabled:  true,
+		IOCTypes: []IOCType{IOCTypeDomain},
+		Auth: AuthConfig{
+			KeyRef:   "vt",
+			Label:    "VirusTotal",
+			Optional: false,
+		},
+		Cache: CacheConfig{
+			Table:    "VT_DOMAIN",
+			TTLHours: 24,
+		},
+		RiskRules: []RiskRule{
+			{
+				Field: "malicious",
+				Type:  RiskThreshold,
+				Thresholds: []RiskThresholdRule{
+					{Gte: 5, Level: "CRITICAL"},
+					{Gte: 2, Level: "HIGH"},
+					{Gte: 1, Level: "MEDIUM"},
+				},
+			},
+		},
+		Card: CardDef{
+			Title:        "🧪 VirusTotal",
+			Order:        1,
+			LinkTemplate: "https://www.virustotal.com/gui/domain/{ioc}",
+			LinkLabel:    "↗ VirusTotal",
+			Fields: []FieldDef{
+				{Key: "malicious", Label: "Malicious", Type: FieldTypeNumber},
+				{Key: "suspicious", Label: "Suspicious", Type: FieldTypeNumber},
+				{Key: "harmless", Label: "Harmless", Type: FieldTypeNumber},
+				{Key: "undetected", Label: "Undetected", Type: FieldTypeNumber},
+				{Key: "reputation", Label: "Reputation", Type: FieldTypeNumber},
+				{Key: "suggestedThreatLabel", Label: "Threat Label", Type: FieldTypeString},
+				{Key: "registrar", Label: "Registrar", Type: FieldTypeString},
+				{Key: "creationDate", Label: "Created", Type: FieldTypeString},
+			},
+		},
+		TableColumns: []TableColumn{
+			{Key: "malicious", Label: "VT Malicious", DefaultVisible: true},
+			{Key: "suggestedThreatLabel", Label: "VT Threat", DefaultVisible: true},
+			{Key: "registrar", Label: "Registrar", DefaultVisible: false},
+		},
+	}
+}
+
+func (v VirusTotalDomain) Run(ctx context.Context, ioc, apiKey string, useCache bool) (*Result, error) {
+	if useCache {
+		if raw := cachedGet(ioc, "VT_DOMAIN"); raw != "" {
+			var r VTDomainResponse
+			if err := json.Unmarshal([]byte(raw), &r); err == nil {
+				return vtDomainToResult(&r), nil
+			}
+		}
+	}
+	r, err := FetchVTDomain(ctx, ioc, apiKey)
+	if err != nil {
+		return &Result{Error: err.Error()}, nil
+	}
+	if b, e := json.Marshal(r); e == nil {
+		cachedPut(ioc, string(b), "VT_DOMAIN")
+	}
+	return vtDomainToResult(r), nil
+}
+
+func vtDomainToResult(r *VTDomainResponse) *Result {
+	a := r.Data.Attributes
+	var created string
+	if a.CreationDate > 0 {
+		created = time.Unix(a.CreationDate, 0).UTC().Format("2006-01-02 15:04:05")
+	}
+	return &Result{Fields: map[string]any{
+		"malicious":            a.LastAnalysisStats.Malicious,
+		"suspicious":           a.LastAnalysisStats.Suspicious,
+		"harmless":             a.LastAnalysisStats.Harmless,
+		"undetected":           a.LastAnalysisStats.Undetected,
+		"reputation":           a.Reputation,
+		"suggestedThreatLabel": a.PopularThreatClassification.SuggestedThreatLabel,
+		"categories":           a.Categories,
+		"registrar":            a.Registrar,
+		"creationDate":         created,
+	}}
 }

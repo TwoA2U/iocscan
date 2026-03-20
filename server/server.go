@@ -1,4 +1,4 @@
-// cmd/web.go — "web" subcommand: starts an HTTP server with the IOC scanner UI.
+// server/server.go — HTTP server: Start(), route registration, and all HTTP handlers.
 //
 // Routes:
 //   GET  /                → HTML single-page app (and all web/ static assets)
@@ -19,7 +19,7 @@
 //
 //	iocscan web
 //	iocscan web --port 9090
-package cmd
+package server
 
 import (
 	"context"
@@ -37,7 +37,6 @@ import (
 
 	"github.com/TwoA2U/iocscan/integrations"
 	"github.com/TwoA2U/iocscan/utils"
-	"github.com/spf13/cobra"
 	"golang.org/x/time/rate"
 )
 
@@ -46,12 +45,35 @@ import (
 // before JSON decoding starts.
 const maxRequestBody = 1 << 20 // 1 MB
 
-// embeddedFS holds the compiled-in web/ directory, set by main.go via SetEmbeddedUI.
-var embeddedFS fs.FS
+// ── Package-level state ───────────────────────────────────────────────────────
 
-// SetEmbeddedUI is called from main.go to pass the embedded web/ FS into this package.
-func SetEmbeddedUI(f fs.FS) {
-	embeddedFS = f
+var (
+	globalCfgFile string
+	globalUI      fs.FS
+)
+
+// Start initialises the HTTP server and blocks until it exits.
+// ui is the embedded web/ filesystem. port is the TCP port to listen on.
+// cfgFile is the optional config file path (empty = use default).
+func Start(port int, cfgFile string, ui fs.FS) {
+	globalCfgFile = cfgFile
+	globalUI = ui
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/health", serveHealth)
+	mux.HandleFunc("/api/integrations", serveIntegrations)
+	mux.HandleFunc("/api/scan", rateLimit(serveScan))
+	mux.HandleFunc("/api/scan/hash", rateLimit(serveHashScan))
+	mux.HandleFunc("/api/scan/ioc", rateLimit(serveIOCScan))
+	mux.HandleFunc("/api/cache/clear", serveCacheClear)
+	mux.HandleFunc("/", serveUI)
+
+	addr := fmt.Sprintf(":%d", port)
+	fmt.Printf("🌐 iocscan web UI → http://localhost%s\n", addr)
+	if err := http.ListenAndServe(addr, mux); err != nil {
+		fmt.Fprintf(os.Stderr, "server error: %v\n", err)
+		os.Exit(1)
+	}
 }
 
 // ── Per-IP rate limiting ──────────────────────────────────────────────────────
@@ -146,37 +168,6 @@ func runChunked(ctx context.Context, count, chunkSize int, delay time.Duration, 
 	}
 }
 
-var webCmd = &cobra.Command{
-	Use:   "web",
-	Short: "Start the web UI for IOC scanning",
-	Example: `  iocscan web
-  iocscan web --port 9090`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		port, _ := cmd.Flags().GetInt("port")
-		addr := fmt.Sprintf(":%d", port)
-
-		// Initialise the cache DB and wire the cache bridge so integration
-		// Run() methods can read/write SQLite. Safe to call even if already
-		// initialised — InitDB is idempotent for the table creation step.
-		utils.InitDB()
-
-		// Use a dedicated mux so we don't pollute the global default mux.
-		// API routes are registered before the catch-all UI handler so that
-		// /api/* paths are never accidentally served the HTML app.
-		mux := http.NewServeMux()
-		mux.HandleFunc("/api/health", serveHealth)
-		mux.HandleFunc("/api/integrations", serveIntegrations)
-		mux.HandleFunc("/api/scan", rateLimit(serveScan))
-		mux.HandleFunc("/api/scan/hash", rateLimit(serveHashScan))
-		mux.HandleFunc("/api/scan/ioc", rateLimit(serveIOCScan))
-		mux.HandleFunc("/api/cache/clear", serveCacheClear)
-		mux.HandleFunc("/", serveUI)
-
-		fmt.Printf("🌐 iocscan web UI → http://localhost%s\n", addr)
-		return http.ListenAndServe(addr, mux)
-	},
-}
-
 // serveHealth handles GET /api/health — returns a minimal JSON payload that
 // load balancers and monitoring tools can poll to confirm the server is up.
 func serveHealth(w http.ResponseWriter, r *http.Request) {
@@ -229,8 +220,8 @@ func serveUI(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if embeddedFS != nil {
-		http.FileServer(http.FS(embeddedFS)).ServeHTTP(w, r)
+	if globalUI != nil {
+		http.FileServer(http.FS(globalUI)).ServeHTTP(w, r)
 		return
 	}
 	http.Error(w, "UI not available", http.StatusNotFound)
@@ -249,34 +240,13 @@ func webDirs() []string {
 
 // scanRequest is the JSON body accepted by POST /api/scan.
 type scanRequest struct {
-	IP         string `json:"ip"`
-	VTKey      string `json:"vt_key"`
-	AbuseKey   string `json:"abuse_key"`
-	IPApiKey   string `json:"ipapi_key"`
-	AbuseCHKey string `json:"abusech_key"`
-	UseCache   bool   `json:"use_cache"`
-}
-
-// loadAPIKeys reads saved API keys from the config file and fills any
-// empty slots in the provided key strings. Returns the filled values.
-// Eliminates the ~15-line duplication previously repeated in each handler.
-func loadAPIKeys(vtKey, abuseKey, ipapiKey, abusechKey string) (vt, abuse, ipapi, abusech string) {
-	vt, abuse, ipapi, abusech = vtKey, abuseKey, ipapiKey, abusechKey
-	if cfg, err := utils.GetAPI(cfgFile); err == nil {
-		if vt == "" {
-			vt = cfg.VTAPI
-		}
-		if abuse == "" {
-			abuse = cfg.AbuseAPI
-		}
-		if ipapi == "" {
-			ipapi = cfg.IPapiAPI
-		}
-		if abusech == "" {
-			abusech = cfg.AbuseCHAPI
-		}
-	}
-	return
+	IP           string `json:"ip"`
+	VTKey        string `json:"vt_key"`
+	AbuseKey     string `json:"abuse_key"`
+	IPApiKey     string `json:"ipapi_key"`
+	AbuseCHKey   string `json:"abusech_key"`
+	GreyNoiseKey string `json:"greynoise_key"`
+	UseCache     bool   `json:"use_cache"`
 }
 
 // serveScan runs IP enrichment for every IP in the request and returns a JSON array.
@@ -297,17 +267,13 @@ func serveScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fall back to saved config for any keys not supplied in the request body.
-	req.VTKey, req.AbuseKey, req.IPApiKey, req.AbuseCHKey =
-		loadAPIKeys(req.VTKey, req.AbuseKey, req.IPApiKey, req.AbuseCHKey)
-
 	ips, err := utils.CheckIP(req.IP)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("invalid IP: %v", err), http.StatusBadRequest)
 		return
 	}
 
-	processor := utils.NewIPProcessor(req.VTKey, req.AbuseKey, req.IPApiKey, req.AbuseCHKey)
+	processor := utils.NewIPProcessor(req.VTKey, req.AbuseKey, req.IPApiKey, req.AbuseCHKey, req.GreyNoiseKey)
 
 	type entry struct {
 		IP     string          `json:"ip"`
@@ -370,10 +336,6 @@ func serveHashScan(w http.ResponseWriter, r *http.Request) {
 		req.Hashes = req.Hashes[:100]
 	}
 
-	// Fall back to saved config
-	req.VTKey, _, _, req.AbuseCHKey =
-		loadAPIKeys(req.VTKey, "", "", req.AbuseCHKey)
-
 	type entry struct {
 		Hash   string          `json:"hash"`
 		Result json.RawMessage `json:"result,omitempty"`
@@ -429,12 +391,13 @@ func serveIOCScan(w http.ResponseWriter, r *http.Request) {
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 	var req struct {
-		IOCs       []string `json:"iocs"`
-		VTKey      string   `json:"vt_key"`
-		AbuseKey   string   `json:"abuse_key"`
-		IPApiKey   string   `json:"ipapi_key"`
-		AbuseCHKey string   `json:"abusech_key"`
-		UseCache   bool     `json:"use_cache"`
+		IOCs         []string `json:"iocs"`
+		VTKey        string   `json:"vt_key"`
+		AbuseKey     string   `json:"abuse_key"`
+		IPApiKey     string   `json:"ipapi_key"`
+		AbuseCHKey   string   `json:"abusech_key"`
+		GreyNoiseKey string   `json:"greynoise_key"`
+		UseCache     bool     `json:"use_cache"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
@@ -447,10 +410,6 @@ func serveIOCScan(w http.ResponseWriter, r *http.Request) {
 	if len(req.IOCs) > 100 {
 		req.IOCs = req.IOCs[:100]
 	}
-
-	// Fall back to saved config for any keys not supplied in the request body.
-	req.VTKey, req.AbuseKey, req.IPApiKey, req.AbuseCHKey =
-		loadAPIKeys(req.VTKey, req.AbuseKey, req.IPApiKey, req.AbuseCHKey)
 
 	type iocEntry struct {
 		IOC    string          `json:"ioc"`
@@ -465,26 +424,27 @@ func serveIOCScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	processor := utils.NewIPProcessor(req.VTKey, req.AbuseKey, req.IPApiKey, req.AbuseCHKey)
+	processor := utils.NewIPProcessor(req.VTKey, req.AbuseKey, req.IPApiKey, req.AbuseCHKey, req.GreyNoiseKey)
 
-	// Partition indices by IOC type so each pipeline can use its own chunk size.
-	var ipIdxs, hashIdxs []int
+	// Partition indices by IOC type — each pipeline owns disjoint index slices,
+	// so concurrent writes to results[] are race-free.
+	var ipIdxs, hashIdxs, domainIdxs []int
 	for i, e := range results {
 		switch e.Type {
 		case string(utils.TypeIP):
 			ipIdxs = append(ipIdxs, i)
 		case string(utils.TypeHash):
 			hashIdxs = append(hashIdxs, i)
+		case string(utils.TypeDomain):
+			domainIdxs = append(domainIdxs, i)
 		default:
 			results[i].Error = fmt.Sprintf("%s scanning not yet supported", e.Type)
 		}
 	}
 
-	// Fan-out IPs and hashes concurrently — each pipeline uses its own chunk
-	// size and inter-chunk delay, and they write to disjoint index slices so
-	// there are no data races on the results slice.
+	// Fan-out all three pipelines concurrently.
 	var pipelineWg sync.WaitGroup
-	pipelineWg.Add(2)
+	pipelineWg.Add(3)
 
 	go func() {
 		defer pipelineWg.Done()
@@ -506,6 +466,20 @@ func serveIOCScan(w http.ResponseWriter, r *http.Request) {
 		runChunked(ctx, len(hashIdxs), 5, 500*time.Millisecond, func(i int) {
 			idx := hashIdxs[i]
 			raw, err := utils.LookupHash(ctx, results[idx].IOC, req.VTKey, req.AbuseCHKey, req.UseCache)
+			if err != nil {
+				results[idx].Error = err.Error()
+				return
+			}
+			results[idx].Result = json.RawMessage(raw)
+		})
+	}()
+
+	go func() {
+		defer pipelineWg.Done()
+		// Domains: chunk 5, 500ms inter-chunk delay (VT domain shares VT quota).
+		runChunked(ctx, len(domainIdxs), 5, 500*time.Millisecond, func(i int) {
+			idx := domainIdxs[i]
+			raw, err := utils.LookupDomain(ctx, results[idx].IOC, req.VTKey, req.AbuseCHKey, req.UseCache)
 			if err != nil {
 				results[idx].Error = err.Error()
 				return
@@ -553,9 +527,4 @@ func serveCacheClear(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(out)
-}
-
-func init() {
-	webCmd.Flags().IntP("port", "p", 8080, "Port to listen on")
-	rootCmd.AddCommand(webCmd)
 }

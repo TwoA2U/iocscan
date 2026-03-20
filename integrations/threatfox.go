@@ -444,3 +444,99 @@ func tfHashToResult(r *TFHashResult) *Result {
 
 	return &Result{Fields: fields}
 }
+
+// ── Domain integration wrapper ────────────────────────────────────────────────
+
+// ThreatFoxDomainIntegration wraps FetchTFIP for domain IOC types.
+// ThreatFox's search_ioc endpoint accepts any IOC type including domains —
+// the same request body works for IPs and domains identically.
+type ThreatFoxDomainIntegration struct{}
+
+func (t ThreatFoxDomainIntegration) Manifest() Manifest {
+	return Manifest{
+		Name:     "threatfox_domain",
+		Label:    "ThreatFox",
+		Icon:     "🦊",
+		Enabled:  true,
+		IOCTypes: []IOCType{IOCTypeDomain},
+		Auth: AuthConfig{
+			KeyRef:   "abusech",
+			Label:    "abuse.ch",
+			Optional: true,
+		},
+		Cache: CacheConfig{
+			Table:    "TF_DOMAIN",
+			TTLHours: 24,
+		},
+		RiskRules: []RiskRule{
+			{
+				Field:   "queryStatus",
+				Type:    RiskStringMatch,
+				Matches: []RiskMatchRule{{Match: "ok", Level: "HIGH"}},
+			},
+		},
+		Card: CardDef{
+			Title:        "🦊 ThreatFox",
+			Order:        2,
+			LinkTemplate: "https://threatfox.abuse.ch/browse.php?search=ioc%3A{ioc}",
+			LinkLabel:    "↗ ThreatFox",
+			Fields: []FieldDef{
+				{Key: "queryStatus", Label: "Status", Type: FieldTypeString},
+				{Key: "threatType", Label: "Threat Type", Type: FieldTypeString},
+				{Key: "malware", Label: "Malware", Type: FieldTypeString},
+				{Key: "malwareAlias", Label: "Aliases", Type: FieldTypeString},
+				{Key: "confidenceLevel", Label: "Confidence", Type: FieldTypeNumber},
+				{Key: "firstSeen", Label: "First Seen", Type: FieldTypeString},
+				{Key: "reporter", Label: "Reporter", Type: FieldTypeString},
+				{Key: "tags", Label: "Tags", Type: FieldTypeTags},
+			},
+		},
+		TableColumns: []TableColumn{
+			{Key: "malware", Label: "TF Malware", DefaultVisible: true},
+			{Key: "confidenceLevel", Label: "TF Confidence", DefaultVisible: true},
+			{Key: "threatType", Label: "TF Type", DefaultVisible: false},
+		},
+	}
+}
+
+func (t ThreatFoxDomainIntegration) Run(ctx context.Context, ioc, apiKey string, useCache bool) (*Result, error) {
+	if useCache {
+		if raw := cachedGet(ioc, "TF_DOMAIN"); raw != "" {
+			var r TFIPResult
+			if err := json.Unmarshal([]byte(raw), &r); err == nil {
+				return tfIPResultToFields(&r), nil
+			}
+		}
+	}
+	// Reuses FetchTFIP — same endpoint and request shape works for domains
+	d, err := FetchTFIP(ctx, ioc, apiKey)
+	if d != nil {
+		if b, e := json.Marshal(d); e == nil {
+			cachedPut(ioc, string(b), "TF_DOMAIN")
+		}
+	}
+	if err != nil {
+		return &Result{Error: err.Error()}, nil
+	}
+	return tfIPResultToFields(d), nil
+}
+
+// tfIPResultToFields converts a TFIPResult into a generic Result.Fields map.
+// Shared by both ThreatFoxIPIntegration and ThreatFoxDomainIntegration.
+func tfIPResultToFields(r *TFIPResult) *Result {
+	if r == nil {
+		return &Result{Fields: map[string]any{"queryStatus": "error"}}
+	}
+	f := map[string]any{
+		"queryStatus":     r.QueryStatus,
+		"threatType":      r.ThreatType,
+		"malware":         r.Malware,
+		"malwareAlias":    r.MalwareAlias,
+		"confidenceLevel": r.ConfidenceLevel,
+		"firstSeen":       r.FirstSeen,
+		"lastSeen":        r.LastSeen,
+		"reporter":        r.Reporter,
+		"tags":            r.Tags,
+	}
+	return &Result{Fields: f}
+}

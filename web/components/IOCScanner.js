@@ -35,9 +35,19 @@ import {
     riskDotColor, vtStatPart, abuseColor, formatBytes, toArr, yn,
     openColDrawer, closeColDrawer, toggleHistDrawer,
     clearHistory, reScan,
-    doIPScan, doHashScanAction,
+    doIPScan, doHashScanAction, doDomainScan,
     handleIPFileUpload, handleIPDrop, clearIPBulk,
     handleHashFileUpload, clearHashBulk,
+    handleDomainFileUpload, clearDomainBulk,
+    allDomainResults, activeDomainIdx, activeDomainResult,
+    domainError, isDomainLoading, domainBulkCount,
+    domainInputText, domainUseCache, domainView,
+    domainResultLinks, highlightedDomainJSON,
+    visibleDomainTableCols, sortedDomainRows,
+    domainSortCol, domainSortAsc,
+    sortDomainTable, renderDomainTableCell,
+    copyDomainJSON, exportDomainCSV, exportDomainJSON,
+    setDomainView,
     copyJSON, copyHashJSON,
     toggleCopyMenu, toggleHashCopyMenu,
     copyClipboard, copyHashClipboard,
@@ -77,9 +87,19 @@ export default defineComponent({
             riskDotColor, vtStatPart, abuseColor, formatBytes, toArr, yn,
             openColDrawer, closeColDrawer, toggleHistDrawer,
             clearHistory, reScan,
-            doIPScan, doHashScanAction,
+            doIPScan, doHashScanAction, doDomainScan,
             handleIPFileUpload, handleIPDrop, clearIPBulk,
             handleHashFileUpload, clearHashBulk,
+            handleDomainFileUpload, clearDomainBulk,
+            allDomainResults, activeDomainIdx, activeDomainResult,
+            domainError, isDomainLoading, domainBulkCount,
+            domainInputText, domainUseCache, domainView,
+            domainResultLinks, highlightedDomainJSON,
+            visibleDomainTableCols, sortedDomainRows,
+            domainSortCol, domainSortAsc,
+            sortDomainTable, renderDomainTableCell,
+            copyDomainJSON, exportDomainCSV, exportDomainJSON,
+            setDomainView,
             copyJSON, copyHashJSON,
             toggleCopyMenu, toggleHashCopyMenu,
             copyClipboard, copyHashClipboard,
@@ -113,6 +133,7 @@ export default defineComponent({
           <span class="text-xs px-2 py-1 border tracking-widest uppercase" style="font-size:0.56rem;border-color:rgba(52,211,153,0.4);color:#34d399">IPAPI.IS</span>
           <span class="text-xs px-2 py-1 border tracking-widest uppercase" style="font-size:0.56rem;border-color:rgba(192,132,252,0.4);color:#c084fc">abuse.ch</span>
           <span class="text-xs px-2 py-1 border tracking-widest uppercase" style="font-size:0.56rem;border-color:rgba(251,191,36,0.4);color:#fbbf24">ThreatFox</span>
+          <span class="text-xs px-2 py-1 border tracking-widest uppercase" style="font-size:0.56rem;border-color:rgba(56,189,248,0.4);color:#38bdf8">GreyNoise</span>
         </div>
 
         <!-- History drawer -->
@@ -168,13 +189,18 @@ export default defineComponent({
           <label class="block text-xs font-bold tracking-widest uppercase mb-2" style="color:#4d6480;font-size:0.58rem">abuse.ch <span style="color:#2e4060">(optional)</span></label>
           <input type="password" v-model="keys.abusech" class="key-input" placeholder="Used for MalwareBazaar + ThreatFox…">
         </div>
+        <div>
+          <label class="block text-xs font-bold tracking-widest uppercase mb-2" style="color:#4d6480;font-size:0.58rem">GreyNoise <span style="color:#2e4060">(optional)</span></label>
+          <input type="password" v-model="keys.greynoise" class="key-input" placeholder="Leave blank for 10 lookups/day…">
+        </div>
       </div>
     </div>
 
     <!-- ══ MODE TABS ════════════════════════════════════════════════════ -->
     <div class="flex border-b mb-6" style="border-color:#1e2d42">
-      <button class="ioc-tab" :class="{active: currentIOCMode==='ip'}"   @click="switchIOCMode('ip')">● IP Address</button>
-      <button class="ioc-tab" :class="{active: currentIOCMode==='hash'}" @click="switchIOCMode('hash')">● File Hash</button>
+      <button class="ioc-tab" :class="{active: currentIOCMode==='ip'}"     @click="switchIOCMode('ip')">● IP Address</button>
+      <button class="ioc-tab" :class="{active: currentIOCMode==='hash'}"   @click="switchIOCMode('hash')">● File Hash</button>
+      <button class="ioc-tab" :class="{active: currentIOCMode==='domain'}" @click="switchIOCMode('domain')">● Domain</button>
     </div>
 
     <!-- ══ IP SCAN SECTION ══════════════════════════════════════════════ -->
@@ -360,6 +386,58 @@ export default defineComponent({
                   <span class="kv-val" style="color:var(--muted);font-style:italic;font-size:0.68rem">
                     {{ activeResult.threatfox.queryStatus === 'no_results' ? 'No ThreatFox intelligence for this IP.' : activeResult.threatfox.queryStatus }}
                   </span>
+                </div>
+              </div>
+              <!-- GreyNoise card (IP mode) -->
+              <div v-if="activeResult.greynoise" class="card" id="card-gn">
+                <div class="card-head">
+                  <span class="card-head-left">📡 GreyNoise</span>
+                  <div class="flex items-center gap-2">
+                    <span v-if="activeResult.greynoise.notObserved" class="mb-notfound-badge">✗ Not Observed</span>
+                    <span v-else-if="activeResult.greynoise.error" class="mb-notfound-badge">✗ Error</span>
+                    <span v-else-if="activeResult.greynoise.riot" class="mb-found-badge" style="background:rgba(52,211,153,0.1);border-color:rgba(52,211,153,0.4);color:#34d399">✓ RIOT</span>
+                    <span v-else class="mb-found-badge">✓ Found</span>
+                    <a :href="'https://viz.greynoise.io/ip/'+activeResultIP" target="_blank" rel="noopener" class="card-source-link">↗ GreyNoise</a>
+                  </div>
+                </div>
+                <template v-if="!activeResult.greynoise.notObserved && !activeResult.greynoise.error">
+                  <div v-if="activeResult.greynoise.classification" class="kv">
+                    <span class="kv-key">Classification</span>
+                    <span class="kv-val" :style="{
+                      color: activeResult.greynoise.classification === 'malicious'  ? 'var(--red)'    :
+                             activeResult.greynoise.classification === 'suspicious' ? 'var(--yellow)' :
+                             activeResult.greynoise.classification === 'benign'     ? 'var(--green)'  : 'var(--muted)',
+                      fontWeight: 600, textTransform: 'capitalize'
+                    }">{{ activeResult.greynoise.classification }}</span>
+                  </div>
+                  <div class="kv">
+                    <span class="kv-key">Internet Scanner</span>
+                    <span class="kv-val" :style="{color: activeResult.greynoise.noise ? 'var(--yellow)' : 'var(--green)'}">
+                      {{ activeResult.greynoise.noise ? '⚠ Yes — Active Scanner' : '✓ No' }}
+                    </span>
+                  </div>
+                  <div class="kv">
+                    <span class="kv-key">Trusted Service (RIOT)</span>
+                    <span class="kv-val" :style="{color: activeResult.greynoise.riot ? 'var(--green)' : 'var(--muted)'}">
+                      {{ activeResult.greynoise.riot ? '✓ Yes — Known Safe' : 'No' }}
+                    </span>
+                  </div>
+                  <div v-if="activeResult.greynoise.name && activeResult.greynoise.name !== 'unknown'" class="kv">
+                    <span class="kv-key">Actor / Service</span>
+                    <span class="kv-val">{{ activeResult.greynoise.name }}</span>
+                  </div>
+                  <div v-if="activeResult.greynoise.lastSeen" class="kv">
+                    <span class="kv-key">Last Seen</span>
+                    <span class="kv-val">{{ activeResult.greynoise.lastSeen }}</span>
+                  </div>
+                </template>
+                <div v-if="activeResult.greynoise.notObserved" class="kv mt-2">
+                  <span class="kv-val" style="color:var(--muted);font-style:italic;font-size:0.68rem">
+                    Not observed scanning the internet or in RIOT dataset.
+                  </span>
+                </div>
+                <div v-if="activeResult.greynoise.error" class="kv mt-2">
+                  <span class="kv-val" style="color:var(--red);font-size:0.68rem">{{ activeResult.greynoise.error }}</span>
                 </div>
               </div>
             </div>
@@ -701,6 +779,183 @@ export default defineComponent({
         </div>
       </div>
     </div>
+
+    <!-- ══ DOMAIN SCAN SECTION ═════════════════════════════════════════════ -->
+    <div v-show="currentIOCMode==='domain'">
+      <div class="border p-4 mb-6" style="border-color:#1e2d42;background:#0d1320;border-top:2px solid #34d399">
+        <div class="flex gap-3" style="align-items:stretch">
+          <textarea id="domainInput" v-model="domainInputText" class="scan-input" rows="3"
+            placeholder="evil.com, malware-c2.ru — one per line or comma-separated"
+            style="flex:1;min-width:0" @keydown.enter.exact.prevent="doDomainScan"></textarea>
+          <div class="flex flex-col gap-2" style="flex-shrink:0">
+            <div class="flex gap-2 items-center">
+              <button class="scan-btn" :disabled="isDomainLoading" @click="doDomainScan" style="flex:1">SCAN</button>
+              <span v-if="isDomainLoading" class="loader"></span>
+            </div>
+          </div>
+        </div>
+        <div v-if="domainBulkCount" class="bulk-preview mt-2">
+          <span style="color:#34d399">📋</span>
+          <span><span style="color:#cbd5e1;font-weight:600">{{ domainBulkCount }}</span> domains detected</span>
+          <button class="action-btn" @click="clearDomainBulk">✕ Clear</button>
+        </div>
+        <div class="flex items-center gap-3 mt-3 pt-3 border-t" style="border-color:#1e2d42">
+          <label class="action-btn cursor-pointer">
+            📁 Load File <input type="file" class="hidden" accept=".txt,.csv,.log" @change="handleDomainFileUpload">
+          </label>
+          <div class="flex items-center gap-2" style="cursor:pointer" @click="domainUseCache=!domainUseCache">
+            <button class="tog" :class="{on: domainUseCache}" style="cursor:pointer"></button>
+            <span style="font-size:0.68rem;color:#4d6480;user-select:none">Use Cache</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Error -->
+      <div v-if="domainError" class="err-box mb-4">❌ {{ domainError }}</div>
+
+      <!-- Domain Results -->
+      <div v-if="allDomainResults.length">
+        <div id="domain-results-bar" class="flex items-center justify-between flex-wrap gap-3 mb-4">
+          <div class="flex gap-0">
+            <button class="view-btn" :class="{active: domainView==='cards'}" @click="setDomainView('cards')">Cards</button>
+            <button class="view-btn" :class="{active: domainView==='table'}" @click="setDomainView('table')">Table</button>
+          </div>
+          <div class="flex items-center gap-2">
+            <button class="export-btn" @click="exportDomainCSV">↓ CSV</button>
+            <button class="export-btn" @click="exportDomainJSON">↓ JSON</button>
+          </div>
+        </div>
+
+        <!-- Domain chip tabs (multi-domain, cards view) -->
+        <div v-if="allDomainResults.length > 1 && domainView==='cards'" class="flex flex-wrap gap-1 mb-4">
+          <div v-for="(e, i) in allDomainResults" :key="i"
+               class="ip-tab" :class="{active: i===activeDomainIdx}" @click="activeDomainIdx=i">
+            <span class="ip-tab-dot" :style="{background: riskDotColor((e.result||e).riskLevel)}"></span>
+            {{ e.ioc || (e.result||e).domain || '?' }}
+          </div>
+        </div>
+
+        <!-- Domain Cards view -->
+        <div v-show="domainView==='cards'">
+          <div v-if="activeDomainResult">
+            <!-- Header -->
+            <div class="mb-4 flex items-center gap-3 flex-wrap">
+              <span :class="['risk-pill', 'risk-'+(activeDomainResult.riskLevel||'CLEAN')]">
+                {{ activeDomainResult.riskLevel || 'CLEAN' }}
+              </span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:0.85rem;color:#e2e8f0">
+                {{ activeDomainResult.domain || allDomainResults[activeDomainIdx]?.ioc || '—' }}
+              </span>
+            </div>
+
+            <div class="cards">
+              <!-- VirusTotal Domain card -->
+              <div v-if="activeDomainResult.vtDomain || activeDomainResult.virustotal" class="card">
+                <div class="card-head">
+                  <span class="card-head-left">🧪 VirusTotal</span>
+                  <a v-if="domainResultLinks.virustotal" :href="domainResultLinks.virustotal"
+                     target="_blank" rel="noopener" class="card-source-link">↗ VirusTotal</a>
+                </div>
+                <div class="vt-pills mt-2">
+                  <span class="vt-pill mal">🔴 Malicious: {{ (activeDomainResult.vtDomain||activeDomainResult.virustotal)?.malicious ?? 0 }}</span>
+                  <span class="vt-pill sus">🟡 Suspicious: {{ (activeDomainResult.vtDomain||activeDomainResult.virustotal)?.suspicious ?? 0 }}</span>
+                  <span class="vt-pill ok">🟢 Harmless: {{ (activeDomainResult.vtDomain||activeDomainResult.virustotal)?.harmless ?? 0 }}</span>
+                  <span class="vt-pill unk">⬜ Undetected: {{ (activeDomainResult.vtDomain||activeDomainResult.virustotal)?.undetected ?? 0 }}</span>
+                </div>
+                <template v-if="activeDomainResult.vtDomain">
+                  <div v-if="activeDomainResult.vtDomain.suggestedThreatLabel" class="kv mt-2">
+                    <span class="kv-key">Threat Label</span>
+                    <span class="kv-val" style="color:var(--red)">{{ activeDomainResult.vtDomain.suggestedThreatLabel }}</span>
+                  </div>
+                  <div v-if="activeDomainResult.vtDomain.registrar" class="kv">
+                    <span class="kv-key">Registrar</span>
+                    <span class="kv-val">{{ activeDomainResult.vtDomain.registrar }}</span>
+                  </div>
+                  <div v-if="activeDomainResult.vtDomain.creationDate" class="kv">
+                    <span class="kv-key">Created</span>
+                    <span class="kv-val">{{ activeDomainResult.vtDomain.creationDate }}</span>
+                  </div>
+                  <div v-if="activeDomainResult.vtDomain.categories && Object.keys(activeDomainResult.vtDomain.categories).length" class="mt-3">
+                    <div class="vt-subsection-label">Categories</div>
+                    <div class="flex flex-wrap gap-1 mt-1">
+                      <span v-for="(cat, engine) in activeDomainResult.vtDomain.categories" :key="engine"
+                            class="hash-tag" :title="engine">{{ cat }}</span>
+                    </div>
+                  </div>
+                </template>
+              </div>
+
+              <!-- ThreatFox Domain card -->
+              <div v-if="activeDomainResult.threatfox" class="card">
+                <div class="card-head">
+                  <span class="card-head-left">🦊 ThreatFox</span>
+                  <div class="flex items-center gap-2">
+                    <span v-if="activeDomainResult.threatfox.queryStatus==='ok'" class="mb-found-badge">✓ Found</span>
+                    <span v-else class="mb-notfound-badge">✗ {{ activeDomainResult.threatfox.queryStatus || 'No Result' }}</span>
+                    <a v-if="domainResultLinks.threatfox" :href="domainResultLinks.threatfox"
+                       target="_blank" rel="noopener" class="card-source-link">↗ ThreatFox</a>
+                  </div>
+                </div>
+                <template v-if="activeDomainResult.threatfox.queryStatus==='ok'">
+                  <div v-if="activeDomainResult.threatfox.malware" class="kv">
+                    <span class="kv-key">Malware</span>
+                    <span class="kv-val" style="color:var(--red);font-weight:600">{{ activeDomainResult.threatfox.malware }}</span>
+                  </div>
+                  <div v-if="activeDomainResult.threatfox.threatType" class="kv">
+                    <span class="kv-key">Threat Type</span>
+                    <span class="kv-val">{{ activeDomainResult.threatfox.threatType }}</span>
+                  </div>
+                  <div v-if="activeDomainResult.threatfox.confidenceLevel != null" class="kv">
+                    <span class="kv-key">Confidence</span>
+                    <span class="kv-val" :style="{color: activeDomainResult.threatfox.confidenceLevel >= 75 ? 'var(--red)' : 'var(--yellow)', fontWeight:600}">
+                      {{ activeDomainResult.threatfox.confidenceLevel }}%
+                    </span>
+                  </div>
+                  <div v-if="activeDomainResult.threatfox.firstSeen" class="kv">
+                    <span class="kv-key">First Seen</span>
+                    <span class="kv-val">{{ activeDomainResult.threatfox.firstSeen }}</span>
+                  </div>
+                  <div v-if="activeDomainResult.threatfox.tags && activeDomainResult.threatfox.tags.length" class="hash-tags mt-2">
+                    <span v-for="tag in activeDomainResult.threatfox.tags" :key="tag" class="hash-tag">{{ tag }}</span>
+                  </div>
+                </template>
+                <div v-else class="kv mt-2">
+                  <span class="kv-val" style="color:var(--muted);font-style:italic;font-size:0.68rem">
+                    No ThreatFox intelligence for this domain.
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Raw JSON panel -->
+            <div class="json-panel mt-4">
+              <button class="copy-btn" @click="copyDomainJSON(activeDomainResult)">COPY JSON</button>
+              <pre><code v-html="highlightedDomainJSON"></code></pre>
+            </div>
+          </div>
+
+          <!-- Error state -->
+          <div v-else-if="allDomainResults[activeDomainIdx] && allDomainResults[activeDomainIdx].error" class="card">
+            <div class="card-head">Error</div>
+            <div style="color:var(--red)">{{ allDomainResults[activeDomainIdx].error }}</div>
+          </div>
+        </div>
+
+        <!-- Domain Table view -->
+        <div v-show="domainView==='table'">
+          <results-table
+            :visible-cols="visibleDomainTableCols"
+            :sorted-rows="sortedDomainRows"
+            :sort-col="domainSortCol"
+            :sort-asc="domainSortAsc"
+            :render-cell="renderDomainTableCell"
+            @sort="sortDomainTable"
+            @row-click="row => { activeDomainIdx = row._idx; setDomainView('cards'); }"
+          ></results-table>
+        </div>
+      </div>
+    </div>
+
 
   </div>
   `,
