@@ -6,8 +6,7 @@
 //   iocscan -c /path     Use a custom config file
 //   iocscan --help       Print usage
 //
-// API keys are configured in the web UI and sent in each scan request body.
-// Persistent key storage will be added with the auth phase.
+// Authentication: session-based via scs. Default admin/admin on first run.
 package main
 
 import (
@@ -67,8 +66,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "bootstrap error: %v\n", err)
 		os.Exit(1)
 	}
-	_ = encKey // will be passed to server.Start() in Phase 4
-
 	// Strip the "web/" prefix so the embedded FS root is the web/ directory
 	// itself — http.FileServer will then serve index.html at "/" correctly.
 	sub, err := fs.Sub(embeddedWeb, "web")
@@ -77,7 +74,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	server.Start(cfg.Server.Port, *cfgFlag, sub)
+	server.Start(cfg.Server.Port, *cfgFlag, sub, db, encKey)
 }
 
 // ensureDataDir creates ~/.iocscan/ if it does not already exist.

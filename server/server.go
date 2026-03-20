@@ -36,9 +36,13 @@ import (
 	"sync/atomic"
 	"time"
 
+	"database/sql"
+
+	"github.com/alexedwards/scs/v2"
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 
+	"github.com/TwoA2U/iocscan/auth"
 	"github.com/TwoA2U/iocscan/integrations"
 	"github.com/TwoA2U/iocscan/utils"
 	"golang.org/x/time/rate"
@@ -52,32 +56,51 @@ const maxRequestBody = 1 << 20 // 1 MB
 var (
 	globalCfgFile string
 	globalUI      fs.FS
+	globalDB      *sql.DB
+	globalEncKey  []byte
+	globalSM      *scs.SessionManager
 )
 
 // Start initialises the HTTP server and blocks until it exits.
-func Start(port int, cfgFile string, ui fs.FS) {
+// db and encKey come from main.go after InitDB() and LoadOrCreateSecret().
+func Start(port int, cfgFile string, ui fs.FS, db *sql.DB, encKey []byte) {
 	globalCfgFile = cfgFile
 	globalUI = ui
+	globalDB = db
+	globalEncKey = encKey
+	globalSM = auth.NewSessionManager(db)
 
 	r := chi.NewRouter()
 
 	// ── Global middleware ─────────────────────────────────────────────────────
 	// RealIP: trust X-Forwarded-For so rate limiting works behind a proxy.
 	// Recoverer: catch panics and return 500 instead of crashing the process.
+	// LoadAndSave: load and commit session data on every request.
 	r.Use(chimiddleware.RealIP)
 	r.Use(chimiddleware.Recoverer)
+	r.Use(globalSM.LoadAndSave)
 
-	// ── Public routes ─────────────────────────────────────────────────────────
+	// ── Public routes — no auth required ─────────────────────────────────────
 	r.Get("/api/health", serveHealth)
 	r.Get("/api/integrations", serveIntegrations)
 
-	// ── Scan routes (rate limited) ────────────────────────────────────────────
-	r.Post("/api/scan", rateLimit(serveScan))
-	r.Post("/api/scan/hash", rateLimit(serveHashScan))
-	r.Post("/api/scan/ioc", rateLimit(serveIOCScan))
+	// ── Auth routes — public ──────────────────────────────────────────────────
+	r.Post("/auth/login", auth.ServeLogin(db, globalSM))
+	r.Post("/auth/logout", auth.ServeLogout(globalSM))
+	r.Get("/auth/me", auth.ServeMe(db, globalSM))
+	// change-password is public so mustChangePw users can still reach it
+	r.Post("/auth/change-password", auth.ServeChangePassword(db, globalSM))
 
-	// ── Cache management ──────────────────────────────────────────────────────
-	r.Post("/api/cache/clear", serveCacheClear)
+	// ── Protected routes — RequireAuth ────────────────────────────────────────
+	r.Group(func(r chi.Router) {
+		r.Use(auth.RequireAuth(db, globalSM))
+
+		// Scan endpoints
+		r.Post("/api/scan", rateLimit(serveScan))
+		r.Post("/api/scan/hash", rateLimit(serveHashScan))
+		r.Post("/api/scan/ioc", rateLimit(serveIOCScan))
+		r.Post("/api/cache/clear", serveCacheClear)
+	})
 
 	// ── Static UI (catch-all — must be last) ─────────────────────────────────
 	r.Handle("/*", http.HandlerFunc(serveUI))

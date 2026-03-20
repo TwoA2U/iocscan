@@ -3,6 +3,8 @@ module github.com/TwoA2U/iocscan
 go 1.25.0
 
 require (
+	github.com/alexedwards/scs/sqlite3store v0.0.0-20251002162104-209de6e426de
+	github.com/alexedwards/scs/v2 v2.9.0
 	github.com/go-chi/chi/v5 v5.2.5
 	golang.org/x/crypto v0.49.0
 	golang.org/x/time v0.14.0
