@@ -157,9 +157,7 @@ func getSharedDB() (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := os.Stat(path); err != nil {
-		return nil, fmt.Errorf("cache DB not found — run `iocscan` setup first")
-	}
+	// Open (and create if needed) — InitDB may not have run yet on first call.
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, err
@@ -170,6 +168,12 @@ func getSharedDB() (*sql.DB, error) {
 	sharedDB = db
 	dbReady = true
 	return sharedDB, nil
+}
+
+// GetSharedDB returns the shared *sql.DB for use by other packages (e.g. auth).
+// The connection is initialised lazily on first call.
+func GetSharedDB() (*sql.DB, error) {
+	return getSharedDB()
 }
 
 // InitDB creates the SQLite cache database and all tables.
@@ -185,7 +189,6 @@ func InitDB() {
 		fmt.Fprintf(os.Stderr, "InitDB open: %v\n", err)
 		return
 	}
-	defer db.Close()
 
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS VT_IP      (KEY TEXT PRIMARY KEY NOT NULL, DATA TEXT NOT NULL, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
@@ -204,14 +207,55 @@ func InitDB() {
 		CREATE INDEX IF NOT EXISTS idx_tf_hash_created  ON TF_HASH(CREATED_AT);
 	`)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "InitDB cache tables: %v\n", err)
+		return
+	}
+
+	// Auth tables — additive, safe to run on existing DBs.
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS users (
+			id             TEXT PRIMARY KEY NOT NULL,
+			username       TEXT UNIQUE NOT NULL,
+			password_hash  TEXT NOT NULL,
+			is_admin       INTEGER NOT NULL DEFAULT 0,
+			must_change_pw INTEGER NOT NULL DEFAULT 1,
+			created_at     TEXT NOT NULL,
+			created_by     TEXT NOT NULL DEFAULT ''
+		);
+		CREATE TABLE IF NOT EXISTS api_keys (
+			user_id        TEXT PRIMARY KEY NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			vt_key         BLOB,
+			abuse_key      BLOB,
+			ipapi_key      BLOB,
+			abusech_key    BLOB,
+			greynoise_key  BLOB,
+			updated_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+		);
+		CREATE TABLE IF NOT EXISTS sessions (
+			token  TEXT PRIMARY KEY NOT NULL,
+			data   BLOB NOT NULL,
+			expiry REAL NOT NULL
+		);
+		CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expiry);
+	`)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "InitDB create tables: %v\n", err)
 		return
 	}
 
+	// Enable WAL journal mode on the schema-creation connection BEFORE
+	// the shared pool opens its own connection — WAL is per-database,
+	// so it must be set while we still hold the only open connection.
 	if _, walErr := db.Exec(`PRAGMA journal_mode=WAL`); walErr != nil {
 		fmt.Fprintf(os.Stderr, "InitDB WAL: %v\n", walErr)
+		// Non-fatal — cache works in rollback mode, WAL is a performance hint.
 	}
 
+	// Close the schema connection before opening the shared pool so SQLite
+	// does not see two connections trying to acquire the WAL write lock.
+	db.Close()
+
+	// Reset and warm up the shared connection pool.
 	dbMu.Lock()
 	dbReady = false
 	sharedDB = nil
@@ -221,7 +265,7 @@ func InitDB() {
 		fmt.Fprintf(os.Stderr, "InitDB warm-up: %v\n", err)
 		return
 	}
-	fmt.Println("✅ Cache DB initialised")
+	fmt.Println("✅ Database initialised")
 }
 
 // ── Unified cache helpers ─────────────────────────────────────────────────────

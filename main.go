@@ -17,6 +17,7 @@ import (
 	"io/fs"
 	"os"
 
+	"github.com/TwoA2U/iocscan/auth"
 	"github.com/TwoA2U/iocscan/config"
 	"github.com/TwoA2U/iocscan/server"
 	"github.com/TwoA2U/iocscan/utils"
@@ -46,8 +47,27 @@ func main() {
 	// Ensure the ~/.iocscan/ directory exists for the database.
 	ensureDataDir()
 
-	// Initialise the SQLite cache database.
+	// Initialise the SQLite cache database and auth tables.
 	utils.InitDB()
+
+	// Load the encryption key (creates ~/.iocscan.secret on first run).
+	encKey, err := auth.LoadOrCreateSecret()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "crypto init error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Bootstrap default admin account if no users exist.
+	db, err := utils.GetSharedDB()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "db init error: %v\n", err)
+		os.Exit(1)
+	}
+	if err := auth.BootstrapAdmin(db); err != nil {
+		fmt.Fprintf(os.Stderr, "bootstrap error: %v\n", err)
+		os.Exit(1)
+	}
+	_ = encKey // will be passed to server.Start() in Phase 4
 
 	// Strip the "web/" prefix so the embedded FS root is the web/ directory
 	// itself — http.FileServer will then serve index.html at "/" correctly.
