@@ -47,6 +47,11 @@ type ScanResult struct {
 	// Errors holds per-integration error messages for failed calls.
 	// A scan can succeed overall while individual integrations fail.
 	Errors map[string]string `json:"errors,omitempty"`
+
+	// CacheHits records which integrations served their result from the
+	// local SQLite cache rather than a live API call.
+	// true = cached, false/absent = live API call.
+	CacheHits map[string]bool `json:"cacheHits,omitempty"`
 }
 
 // ── Key helper ────────────────────────────────────────────────────────────────
@@ -152,10 +157,11 @@ func Scan(
 	// ── Collect results ───────────────────────────────────────────────────────
 
 	out := &ScanResult{
-		IOC:     ioc,
-		IOCType: string(iocType),
-		Results: make(map[string]map[string]any, len(plugins)),
-		Errors:  make(map[string]string),
+		IOC:       ioc,
+		IOCType:   string(iocType),
+		Results:   make(map[string]map[string]any, len(plugins)),
+		Errors:    make(map[string]string),
+		CacheHits: make(map[string]bool),
 	}
 
 	for pr := range ch {
@@ -163,12 +169,18 @@ func Scan(
 			out.Errors[pr.name] = pr.result.Error
 		} else {
 			out.Results[pr.name] = pr.result.Fields
+			if pr.result.FromCache {
+				out.CacheHits[pr.name] = true
+			}
 		}
 	}
 
-	// Remove Errors map from output if empty — keeps JSON clean.
+	// Remove Errors and CacheHits maps from output if empty — keeps JSON clean.
 	if len(out.Errors) == 0 {
 		out.Errors = nil
+	}
+	if len(out.CacheHits) == 0 {
+		out.CacheHits = nil
 	}
 
 	// Check for context cancellation after collecting — if the caller gave up

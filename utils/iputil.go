@@ -50,6 +50,7 @@ type IPGeo struct {
 type ComplexResult struct {
 	IPAddress string  `json:"ipAddress"`
 	RiskLevel string  `json:"riskLevel"`
+	Cached    bool    `json:"cached"`
 	Links     IPLinks `json:"links"`
 
 	Geo        IPGeo                     `json:"geo"`

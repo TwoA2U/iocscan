@@ -34,6 +34,9 @@ func (p *IPProcessor) Lookup(ctx context.Context, ip string, useCache bool) (str
 
 	result := buildComplexResult(ip, sr)
 
+	// Cached = true when every integration served from local cache.
+	result.Cached = len(sr.CacheHits) > 0 && len(sr.CacheHits) == len(sr.Results)
+
 	j, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("marshal ComplexResult: %w", err)

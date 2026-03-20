@@ -2,6 +2,7 @@
 package utils
 
 import (
+	"github.com/TwoA2U/iocscan/integrations"
 	"database/sql"
 	"fmt"
 	"os"
@@ -9,7 +10,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
 	_ "modernc.org/sqlite"
 	"gopkg.in/yaml.v3"
 )
@@ -120,7 +120,7 @@ var (
 )
 
 var allowedTables = map[string]bool{
-	"VT_IP": true, "ABUSE_IP": true, "IPAPIIS_IP": true,
+	"VT_IP": true, "ABUSE_IP": true, "IPAPIIS_IP": true, "GN_IP": true,
 	"VT_HASH": true, "MB_HASH": true, "TF_IP": true, "TF_HASH": true,
 }
 
@@ -198,6 +198,7 @@ func InitDB() {
 		CREATE TABLE IF NOT EXISTS MB_HASH    (KEY TEXT PRIMARY KEY NOT NULL, DATA TEXT NOT NULL, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
 		CREATE TABLE IF NOT EXISTS TF_IP      (KEY TEXT PRIMARY KEY NOT NULL, DATA TEXT NOT NULL, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
 		CREATE TABLE IF NOT EXISTS TF_HASH    (KEY TEXT PRIMARY KEY NOT NULL, DATA TEXT NOT NULL, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+		CREATE TABLE IF NOT EXISTS GN_IP      (KEY TEXT PRIMARY KEY NOT NULL, DATA TEXT NOT NULL, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
 		CREATE INDEX IF NOT EXISTS idx_vt_ip_created    ON VT_IP(CREATED_AT);
 		CREATE INDEX IF NOT EXISTS idx_abuse_ip_created ON ABUSE_IP(CREATED_AT);
 		CREATE INDEX IF NOT EXISTS idx_ipapiis_created  ON IPAPIIS_IP(CREATED_AT);
@@ -205,6 +206,7 @@ func InitDB() {
 		CREATE INDEX IF NOT EXISTS idx_mb_hash_created  ON MB_HASH(CREATED_AT);
 		CREATE INDEX IF NOT EXISTS idx_tf_ip_created    ON TF_IP(CREATED_AT);
 		CREATE INDEX IF NOT EXISTS idx_tf_hash_created  ON TF_HASH(CREATED_AT);
+		CREATE INDEX IF NOT EXISTS idx_gn_ip_created    ON GN_IP(CREATED_AT);
 	`)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "InitDB cache tables: %v\n", err)
@@ -265,7 +267,10 @@ func InitDB() {
 		fmt.Fprintf(os.Stderr, "InitDB warm-up: %v\n", err)
 		return
 	}
+
+	integrations.SetCacheFuncs(getCacheEntry, putCacheEntry)
 	fmt.Println("✅ Database initialised")
+
 }
 
 // ── Unified cache helpers ─────────────────────────────────────────────────────

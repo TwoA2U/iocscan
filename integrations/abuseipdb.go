@@ -295,7 +295,9 @@ func (a AbuseIPDBIntegration) Run(ctx context.Context, ioc, apiKey string, useCa
 		if raw := cachedGet(ioc, "ABUSE_IP"); raw != "" {
 			var r AbuseIPResult
 			if err := json.Unmarshal([]byte(raw), &r); err == nil {
-				return abuseToResult(&r), nil
+				res := abuseToResult(&r)
+				res.FromCache = true
+				return res, nil
 			}
 		}
 	}

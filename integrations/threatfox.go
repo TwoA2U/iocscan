@@ -308,7 +308,9 @@ func (t ThreatFoxIPIntegration) Run(ctx context.Context, ioc, apiKey string, use
 		if raw := cachedGet(ioc, "TF_IP"); raw != "" {
 			var r TFIPResult
 			if err := json.Unmarshal([]byte(raw), &r); err == nil {
-				return tfIPToResult(&r), nil
+				res := tfIPToResult(&r)
+				res.FromCache = true
+				return res, nil
 			}
 		}
 	}
@@ -406,7 +408,9 @@ func (t ThreatFoxHashIntegration) Run(ctx context.Context, ioc, apiKey string, u
 		if raw := cachedGet(ioc, "TF_HASH"); raw != "" {
 			var r TFHashResult
 			if err := json.Unmarshal([]byte(raw), &r); err == nil {
-				return tfHashToResult(&r), nil
+				res := tfHashToResult(&r)
+				res.FromCache = true
+				return res, nil
 			}
 		}
 	}
@@ -504,7 +508,9 @@ func (t ThreatFoxDomainIntegration) Run(ctx context.Context, ioc, apiKey string,
 		if raw := cachedGet(ioc, "TF_DOMAIN"); raw != "" {
 			var r TFIPResult
 			if err := json.Unmarshal([]byte(raw), &r); err == nil {
-				return tfIPResultToFields(&r), nil
+				res := tfIPResultToFields(&r)
+				res.FromCache = true
+				return res, nil
 			}
 		}
 	}

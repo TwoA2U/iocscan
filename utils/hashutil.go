@@ -26,6 +26,7 @@ type HashResult struct {
 	Hash      string    `json:"hash"`
 	HashType  string    `json:"hashType"`
 	RiskLevel string    `json:"riskLevel"`
+	Cached    bool      `json:"cached"`
 	Links     HashLinks `json:"links"`
 
 	VirusTotal    integrations.HashVirusTotal    `json:"virustotal"`

@@ -412,7 +412,9 @@ func (v VirusTotalIP) Run(ctx context.Context, ioc, apiKey string, useCache bool
 		if raw := cachedGet(ioc, "VT_IP"); raw != "" {
 			var r VTIPResult
 			if err := json.Unmarshal([]byte(raw), &r); err == nil {
-				return vtIPToResult(&r), nil
+				res := vtIPToResult(&r)
+				res.FromCache = true
+				return res, nil
 			}
 		}
 	}
@@ -512,7 +514,9 @@ func (v VirusTotalHash) Run(ctx context.Context, ioc, apiKey string, useCache bo
 			var r VTFileResponse
 			if err := json.Unmarshal([]byte(raw), &r); err == nil {
 				mapped, _ := MapVTHashResult(&r)
-				return vtHashToResult(mapped), nil
+				res := vtHashToResult(mapped)
+				res.FromCache = true
+				return res, nil
 			}
 		}
 	}
@@ -680,7 +684,9 @@ func (v VirusTotalDomain) Run(ctx context.Context, ioc, apiKey string, useCache 
 		if raw := cachedGet(ioc, "VT_DOMAIN"); raw != "" {
 			var r VTDomainResponse
 			if err := json.Unmarshal([]byte(raw), &r); err == nil {
-				return vtDomainToResult(&r), nil
+				res := vtDomainToResult(&r)
+				res.FromCache = true
+				return res, nil
 			}
 		}
 	}

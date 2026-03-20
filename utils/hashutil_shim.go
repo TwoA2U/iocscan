@@ -42,6 +42,9 @@ func LookupHash(ctx context.Context, hash, vtKey, abusechKey string, useCache bo
 
 	result := buildHashResult(hash, hashType, sr)
 
+	// Cached = true when every integration served from local cache.
+	result.Cached = len(sr.CacheHits) > 0 && len(sr.CacheHits) == len(sr.Results)
+
 	j, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("marshal HashResult: %w", err)

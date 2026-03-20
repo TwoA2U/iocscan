@@ -128,7 +128,9 @@ func (i IPAPIIntegration) Run(ctx context.Context, ioc, apiKey string, useCache 
 		if raw := cachedGet(ioc, "IPAPIIS_IP"); raw != "" {
 			var r IPAPIResponse
 			if err := json.Unmarshal([]byte(raw), &r); err == nil {
-				return ipapiToResult(&r), nil
+				res := ipapiToResult(&r)
+				res.FromCache = true
+				return res, nil
 			}
 		}
 	}

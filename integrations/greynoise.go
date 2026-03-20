@@ -187,16 +187,30 @@ func (g GreyNoise) Manifest() Manifest {
 func (g GreyNoise) Run(ctx context.Context, ioc, apiKey string, useCache bool) (*Result, error) {
 	if useCache {
 		if raw := cachedGet(ioc, "GN_IP"); raw != "" {
+			// Check for cached error placeholder first.
+			var placeholder struct {
+				Message string `json:"message"`
+				Error   string `json:"error"`
+			}
+			if json.Unmarshal([]byte(raw), &placeholder) == nil && placeholder.Error != "" {
+				return &Result{Error: placeholder.Error}, nil
+			}
 			var r gnResponse
 			if err := json.Unmarshal([]byte(raw), &r); err == nil {
-				return gnToResult(&r), nil
+				res := gnToResult(&r)
+				res.FromCache = true
+				return res, nil
 			}
 		}
 	}
 
 	r, notFound, err := fetchGreyNoise(ctx, ioc, apiKey)
 	if err != nil {
-		// Return soft error — orchestrator collects partial results
+		// Cache rate-limit errors so repeated scans don't burn more daily lookups.
+		// Store the error message as a JSON placeholder — cachedGet will serve it
+		// on the next scan within the TTL window.
+		errPlaceholder := fmt.Sprintf(`{"message":"error","error":%q}`, err.Error())
+		cachedPut(ioc, errPlaceholder, "GN_IP")
 		return &Result{Error: err.Error()}, nil
 	}
 	if notFound {

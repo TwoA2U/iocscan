@@ -506,7 +506,7 @@ func serveCacheClear(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewDecoder(r.Body).Decode(&req)
 
-	tables := []string{"VT_IP", "ABUSE_IP", "IPAPIIS_IP", "VT_HASH", "MB_HASH", "TF_IP", "TF_HASH"}
+	tables := []string{"VT_IP", "ABUSE_IP", "IPAPIIS_IP", "GN_IP", "VT_HASH", "MB_HASH", "TF_IP", "TF_HASH"}
 	if req.Table != "" && req.Table != "all" {
 		tables = []string{req.Table}
 	}

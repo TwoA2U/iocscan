@@ -323,6 +323,10 @@ type Result struct {
 	// (JSON marshal failures, nil dereferences). For all vendor HTTP failures
 	// (network error, bad status, missing API key) set this field instead.
 	Error string `json:"error,omitempty"`
+
+	// FromCache is true when this result was served from the local SQLite
+	// cache rather than a live vendor API call.
+	FromCache bool `json:"fromCache"`
 }
 
 // ── Integration Interface ─────────────────────────────────────────────────────

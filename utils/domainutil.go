@@ -48,6 +48,7 @@ type DomainVT struct {
 type DomainResult struct {
 	Domain    string      `json:"domain"`
 	RiskLevel string      `json:"riskLevel"`
+	Cached    bool        `json:"cached"`
 	Links     DomainLinks `json:"links"`
 
 	VirusTotal integrations.IPVirusTotal `json:"virustotal"` // reuse IP VT type (same fields)
@@ -77,6 +78,9 @@ func LookupDomain(ctx context.Context, domain, vtKey, abusechKey string, useCach
 	}
 
 	result := buildDomainResult(domain, sr)
+
+	// Cached = true when every integration served from local cache.
+	result.Cached = len(sr.CacheHits) > 0 && len(sr.CacheHits) == len(sr.Results)
 
 	j, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
