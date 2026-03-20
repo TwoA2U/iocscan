@@ -1,10 +1,4 @@
 // utils/common.go — config file, SQLite cache, and API key helpers.
-//
-// Improvements in this revision:
-//   1. Single shared *sql.DB opened once at InitDB() time — no more open/close per query.
-//   2. hashCacheTables merged into allowedTables — single unified whitelist, no init() coupling.
-//   3. getCacheEntry / putCacheEntry replace the duplicate getCached/getHashCached pairs.
-//   4. Cache TTL is configurable via IOCSCAN_CACHE_TTL_DAYS env var (default: 30 days).
 package utils
 
 import (
@@ -12,17 +6,99 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
+	"gopkg.in/yaml.v3"
 )
+
+// ── API key collection ────────────────────────────────────────────────────────
+
+// CollectionAPI holds the API keys read from the config file.
+type CollectionAPI struct {
+	VTAPI        string `yaml:"VT_API"`
+	AbuseAPI     string `yaml:"Abuse_API"`
+	IPapiAPI     string `yaml:"IPapi_API"`
+	AbuseCHAPI   string `yaml:"AbuseCH_API"`
+	GreyNoiseAPI string `yaml:"GreyNoise_API"`
+}
+
+// GetAPI reads API keys from the config file (default: ~/.iocscan.yaml).
+func GetAPI(cfgFile string) (*CollectionAPI, error) {
+	path, err := getConfigPath(cfgFile)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"config not found — run `iocscan -v <VT_KEY> -a <ABUSE_KEY>` first: %w", err,
+		)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("could not read config %s: %w", path, err)
+	}
+
+	var cfg CollectionAPI
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("could not parse config %s: %w", path, err)
+	}
+
+	cfg.VTAPI = strings.TrimSpace(cfg.VTAPI)
+	cfg.AbuseAPI = strings.TrimSpace(cfg.AbuseAPI)
+	cfg.IPapiAPI = strings.TrimSpace(cfg.IPapiAPI)
+	cfg.AbuseCHAPI = strings.TrimSpace(cfg.AbuseCHAPI)
+	cfg.GreyNoiseAPI = strings.TrimSpace(cfg.GreyNoiseAPI)
+	return &cfg, nil
+}
+
+// getConfigPath resolves the config file path, defaulting to ~/.iocscan.yaml.
+func getConfigPath(cfgFile string) (string, error) {
+	if cfgFile == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		cfgFile = filepath.Join(home, ".iocscan.yaml")
+	}
+	if _, err := os.Stat(cfgFile); err != nil {
+		return "", err
+	}
+	return cfgFile, nil
+}
+
+// WriteConf persists the API keys to ~/.iocscan.yaml.
+func WriteConf(vtAPI, abuseAPI, ipapiAPI, abuseCHAPI, greynoiseAPI string) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "could not determine home directory: %v\n", err)
+		return
+	}
+
+	cfg := CollectionAPI{
+		VTAPI:        vtAPI,
+		AbuseAPI:     abuseAPI,
+		IPapiAPI:     ipapiAPI,
+		AbuseCHAPI:   abuseCHAPI,
+		GreyNoiseAPI: greynoiseAPI,
+	}
+
+	data, err := yaml.Marshal(&cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "could not serialize config: %v\n", err)
+		return
+	}
+
+	cfgPath := filepath.Join(home, ".iocscan.yaml")
+	if err := os.WriteFile(cfgPath, data, 0600); err != nil {
+		fmt.Fprintf(os.Stderr, "could not write config to %s: %v\n", cfgPath, err)
+		return
+	}
+	fmt.Printf("✅ Config saved to %s\n", cfgPath)
+}
 
 // ── SQLite cache ──────────────────────────────────────────────────────────────
 
-// cacheMaxAge is how long a cached result is considered fresh.
-// Override at runtime with IOCSCAN_CACHE_TTL_DAYS (must be a positive integer).
-// Falls back to 30 days if the variable is unset, zero, negative, or non-numeric.
 var cacheMaxAge = func() time.Duration {
 	const defaultDays = 30
 	val := os.Getenv("IOCSCAN_CACHE_TTL_DAYS")
@@ -31,43 +107,23 @@ var cacheMaxAge = func() time.Duration {
 	}
 	days := 0
 	if _, err := fmt.Sscanf(val, "%d", &days); err != nil || days <= 0 {
-		fmt.Fprintf(os.Stderr, "warning: IOCSCAN_CACHE_TTL_DAYS=%q is invalid, using default %d days\n", val, defaultDays)
+		fmt.Fprintf(os.Stderr, "warning: IOCSCAN_CACHE_TTL_DAYS=%q invalid, using default %d days\n", val, defaultDays)
 		return defaultDays * 24 * time.Hour
 	}
-	fmt.Fprintf(os.Stderr, "info: cache TTL set to %d days (IOCSCAN_CACHE_TTL_DAYS)\n", days)
 	return time.Duration(days) * 24 * time.Hour
 }()
 
-// sharedDB is the single long-lived database connection.
-// Protected by dbMu; dbReady flips to true once the connection is established.
-// Using a mutex instead of sync.Once means getSharedDB() can succeed on a
-// later call even if an earlier call failed (e.g. DB file didn't exist yet
-// when the process started but InitDB() has since created it).
 var (
-	sharedDB  *sql.DB
-	dbMu      sync.Mutex
-	dbReady   bool
-	dbInitErr error
+	sharedDB *sql.DB
+	dbMu     sync.Mutex
+	dbReady  bool
 )
 
-// allowedTables is the unified whitelist of valid cache table names.
-// Covers both IP tables (previously in allowedTables) and hash tables
-// (previously in hashCacheTables, populated via a fragile init() in hashutil.go).
-// Keeping them together eliminates the implicit cross-file init() dependency.
 var allowedTables = map[string]bool{
-	// IP-keyed tables
-	"VT_IP":      true,
-	"ABUSE_IP":   true,
-	"IPAPIIS_IP": true,
-	// Hash/mixed-key tables
-	"VT_HASH": true,
-	"MB_HASH": true,
-	"TF_IP":   true,
-	"TF_HASH": true,
+	"VT_IP": true, "ABUSE_IP": true, "IPAPIIS_IP": true,
+	"VT_HASH": true, "MB_HASH": true, "TF_IP": true, "TF_HASH": true,
 }
 
-// SQLite CURRENT_TIMESTAMP stores as "2006-01-02 15:04:05", not RFC3339.
-// We try multiple layouts to be safe.
 var sqliteTimeFormats = []string{
 	"2006-01-02 15:04:05",
 	"2006-01-02T15:04:05Z",
@@ -91,11 +147,6 @@ func dbPath() (string, error) {
 	return filepath.Join(home, ".iocscan.db"), nil
 }
 
-// getSharedDB returns the long-lived *sql.DB, initialising it on first
-// successful call. Unlike sync.Once, a failed attempt does NOT permanently
-// lock out future calls — so if the DB file didn't exist when the process
-// started (user forgot to run setup) but InitDB() has since created it,
-// the next cache access will succeed without restarting.
 func getSharedDB() (*sql.DB, error) {
 	dbMu.Lock()
 	defer dbMu.Unlock()
@@ -104,30 +155,24 @@ func getSharedDB() (*sql.DB, error) {
 	}
 	path, err := dbPath()
 	if err != nil {
-		dbInitErr = err
 		return nil, err
 	}
 	if _, err := os.Stat(path); err != nil {
-		dbInitErr = fmt.Errorf("cache DB not found — run `iocscan` setup first")
-		return nil, dbInitErr
+		return nil, fmt.Errorf("cache DB not found — run `iocscan` setup first")
 	}
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
-		dbInitErr = err
 		return nil, err
 	}
-	// SQLite only supports one concurrent writer; cap the pool accordingly.
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
-	db.SetConnMaxLifetime(0) // keep the connection alive indefinitely
+	db.SetConnMaxLifetime(0)
 	sharedDB = db
 	dbReady = true
-	dbInitErr = nil
 	return sharedDB, nil
 }
 
-// InitDB creates the SQLite cache database and all tables, then warms up the
-// shared connection so the first real query doesn't pay the open cost.
+// InitDB creates the SQLite cache database and all tables.
 func InitDB() {
 	path, err := dbPath()
 	if err != nil {
@@ -135,99 +180,52 @@ func InitDB() {
 		return
 	}
 
-	// Use a temporary connection for schema setup so we can use DDL freely
-	// before the shared pool is configured.
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "InitDB open: %v\n", err)
 		return
 	}
-	defer db.Close() // always closes after schema setup, regardless of outcome
+	defer db.Close()
 
 	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS VT_IP (
-			KEY        TEXT PRIMARY KEY NOT NULL,
-			DATA       TEXT NOT NULL,
-			CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		);
-		CREATE TABLE IF NOT EXISTS ABUSE_IP (
-			KEY        TEXT PRIMARY KEY NOT NULL,
-			DATA       TEXT NOT NULL,
-			CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		);
-		CREATE TABLE IF NOT EXISTS IPAPIIS_IP (
-			KEY        TEXT PRIMARY KEY NOT NULL,
-			DATA       TEXT NOT NULL,
-			CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		);
-		CREATE TABLE IF NOT EXISTS VT_HASH (
-			KEY        TEXT PRIMARY KEY NOT NULL,
-			DATA       TEXT NOT NULL,
-			CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		);
-		CREATE TABLE IF NOT EXISTS MB_HASH (
-			KEY        TEXT PRIMARY KEY NOT NULL,
-			DATA       TEXT NOT NULL,
-			CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		);
-		CREATE TABLE IF NOT EXISTS TF_IP (
-			KEY        TEXT PRIMARY KEY NOT NULL,
-			DATA       TEXT NOT NULL,
-			CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		);
-		CREATE TABLE IF NOT EXISTS TF_HASH (
-			KEY        TEXT PRIMARY KEY NOT NULL,
-			DATA       TEXT NOT NULL,
-			CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		);
-		CREATE INDEX IF NOT EXISTS idx_vt_ip_created      ON VT_IP(CREATED_AT);
-		CREATE INDEX IF NOT EXISTS idx_abuse_ip_created   ON ABUSE_IP(CREATED_AT);
-		CREATE INDEX IF NOT EXISTS idx_ipapiis_created    ON IPAPIIS_IP(CREATED_AT);
-		CREATE INDEX IF NOT EXISTS idx_vt_hash_created    ON VT_HASH(CREATED_AT);
-		CREATE INDEX IF NOT EXISTS idx_mb_hash_created    ON MB_HASH(CREATED_AT);
-		CREATE INDEX IF NOT EXISTS idx_tf_ip_created      ON TF_IP(CREATED_AT);
-		CREATE INDEX IF NOT EXISTS idx_tf_hash_created    ON TF_HASH(CREATED_AT);
+		CREATE TABLE IF NOT EXISTS VT_IP      (KEY TEXT PRIMARY KEY NOT NULL, DATA TEXT NOT NULL, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+		CREATE TABLE IF NOT EXISTS ABUSE_IP   (KEY TEXT PRIMARY KEY NOT NULL, DATA TEXT NOT NULL, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+		CREATE TABLE IF NOT EXISTS IPAPIIS_IP (KEY TEXT PRIMARY KEY NOT NULL, DATA TEXT NOT NULL, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+		CREATE TABLE IF NOT EXISTS VT_HASH    (KEY TEXT PRIMARY KEY NOT NULL, DATA TEXT NOT NULL, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+		CREATE TABLE IF NOT EXISTS MB_HASH    (KEY TEXT PRIMARY KEY NOT NULL, DATA TEXT NOT NULL, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+		CREATE TABLE IF NOT EXISTS TF_IP      (KEY TEXT PRIMARY KEY NOT NULL, DATA TEXT NOT NULL, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+		CREATE TABLE IF NOT EXISTS TF_HASH    (KEY TEXT PRIMARY KEY NOT NULL, DATA TEXT NOT NULL, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+		CREATE INDEX IF NOT EXISTS idx_vt_ip_created    ON VT_IP(CREATED_AT);
+		CREATE INDEX IF NOT EXISTS idx_abuse_ip_created ON ABUSE_IP(CREATED_AT);
+		CREATE INDEX IF NOT EXISTS idx_ipapiis_created  ON IPAPIIS_IP(CREATED_AT);
+		CREATE INDEX IF NOT EXISTS idx_vt_hash_created  ON VT_HASH(CREATED_AT);
+		CREATE INDEX IF NOT EXISTS idx_mb_hash_created  ON MB_HASH(CREATED_AT);
+		CREATE INDEX IF NOT EXISTS idx_tf_ip_created    ON TF_IP(CREATED_AT);
+		CREATE INDEX IF NOT EXISTS idx_tf_hash_created  ON TF_HASH(CREATED_AT);
 	`)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "InitDB create tables: %v\n", err)
 		return
 	}
 
-	// Enable WAL journal mode for better read concurrency.
-	// Non-fatal: cache works correctly in default rollback mode too.
 	if _, walErr := db.Exec(`PRAGMA journal_mode=WAL`); walErr != nil {
 		fmt.Fprintf(os.Stderr, "InitDB WAL: %v\n", walErr)
 	}
 
-	// Reset dbReady so the next getSharedDB() call re-opens the connection
-	// against the newly created (or already-existing) DB file. This is safe
-	// here because InitDB() is only called from the CLI setup path, not from
-	// concurrent request handlers.
 	dbMu.Lock()
 	dbReady = false
 	sharedDB = nil
 	dbMu.Unlock()
 
-	// Warm up the shared connection pool immediately.
 	if _, err := getSharedDB(); err != nil {
 		fmt.Fprintf(os.Stderr, "InitDB warm-up: %v\n", err)
 		return
 	}
-
 	fmt.Println("✅ Cache DB initialised")
 }
 
 // ── Unified cache helpers ─────────────────────────────────────────────────────
-//
-// getCacheEntry and putCacheEntry replace the previous four helpers:
-//   getCached / putCached       (IP tables)
-//   getHashCached / putHashCached (hash tables)
-//
-// Both IP and hash lookups use the same underlying schema (KEY column),
-// so a single pair of helpers is sufficient.
 
-// getCacheEntry returns a cached result for the given key and table,
-// or "" if not found, expired (older than cacheMaxAge), or the table is not whitelisted.
 func getCacheEntry(key, table string) string {
 	if !allowedTables[table] {
 		return ""
@@ -236,13 +234,11 @@ func getCacheEntry(key, table string) string {
 	if err != nil {
 		return ""
 	}
-
 	var data, createdAt string
 	q := fmt.Sprintf("SELECT DATA, CREATED_AT FROM %s WHERE KEY = ?", table)
 	if err := db.QueryRow(q, key).Scan(&data, &createdAt); err != nil {
 		return ""
 	}
-
 	t, err := parseSQLiteTime(createdAt)
 	if err != nil || time.Since(t.UTC()) > cacheMaxAge {
 		db.Exec(fmt.Sprintf("DELETE FROM %s WHERE KEY = ?", table), key)
@@ -251,8 +247,6 @@ func getCacheEntry(key, table string) string {
 	return data
 }
 
-// putCacheEntry inserts or replaces a cached result.
-// No-op if the table name is not in the allowedTables whitelist.
 func putCacheEntry(key, data, table string) {
 	if !allowedTables[table] {
 		return
@@ -265,16 +259,12 @@ func putCacheEntry(key, data, table string) {
 	db.Exec(q, key, data)
 }
 
-// ── ClearCaches ───────────────────────────────────────────────────────────────
-
 // ClearHashCaches deletes all rows from the specified cache tables.
-// Returns the total number of rows deleted.
 func ClearHashCaches(tables []string) int {
 	db, err := getSharedDB()
 	if err != nil {
 		return 0
 	}
-
 	total := 0
 	for _, t := range tables {
 		if !allowedTables[t] {

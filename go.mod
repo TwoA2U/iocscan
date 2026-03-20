@@ -3,6 +3,7 @@ module github.com/TwoA2U/iocscan
 go 1.24.2
 
 require (
+	github.com/go-chi/chi/v5 v5.2.5
 	golang.org/x/time v0.14.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.46.1
