@@ -25,12 +25,12 @@ import {
     addHist, clearHistory, reScan,
     registerReScan,
 } from './useScanHistory.js';
+import { apiFetch } from './useAuth.js';
 
 const { ref, reactive, computed, watch, nextTick } = Vue;
 
 // ─── Core state ───────────────────────────────────────────────────────────────
 
-export const keys          = reactive({ vt: '', abuse: '', ipapi: '', abusech: '', greynoise: '' });
 export const ipInputText   = ref('');
 export const hashInputText = ref('');
 export const ipUseCache    = ref(true);
@@ -272,20 +272,15 @@ export async function doIPScan() {
     IPResults.ipError.value = '';
     isIPLoading.value = true;
     try {
-        const res = await fetch('/api/scan', {
+        const data = await apiFetch('/api/scan', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 ip,
-                vt_key: keys.vt, abuse_key: keys.abuse,
-                ipapi_key: keys.ipapi, abusech_key: keys.abusech,
-                greynoise_key: keys.greynoise,
                 use_cache: ipUseCache.value,
             }),
         });
         const prevCount = IPResults.allResults.value.length;
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
         IPResults.allResults.value = data;
         IPResults.activeIdx.value  = 0;
         data.forEach(e => { if (e.result) addHist(e.ip, e.result.riskLevel || 'CLEAN', 'ip'); });
@@ -306,13 +301,11 @@ export async function doHashScanAction() {
     HashResults.hashError.value = '';
     isHashLoading.value = true;
     try {
-        const resp = await fetch('/api/scan/hash', {
+        const data = await apiFetch('/api/scan/hash', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ hashes, vt_key: keys.vt, abusech_key: keys.abusech, use_cache: hashUseCache.value }),
+            body: JSON.stringify({ hashes, use_cache: hashUseCache.value }),
         });
-        if (!resp.ok) { const t = await resp.text(); throw new Error(t || resp.statusText); }
-        const data = await resp.json();
         HashResults.allHashResults.value = data;
         HashResults.activeHashIdx.value  = 0;
         buildHashDynCols(data);
@@ -338,18 +331,14 @@ export async function doDomainScan() {
     DomainResults.domainError.value = '';
     DomainResults.isDomainLoading.value = true;
     try {
-        const resp = await fetch('/api/scan/ioc', {
+        const data = await apiFetch('/api/scan/ioc', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 iocs: domains,
-                vt_key: keys.vt, abusech_key: keys.abusech,
-                greynoise_key: keys.greynoise,
                 use_cache: DomainResults.domainUseCache.value,
             }),
         });
-        if (!resp.ok) { const t = await resp.text(); throw new Error(t || resp.statusText); }
-        const data = await resp.json();
         DomainResults.allDomainResults.value = data;
         DomainResults.activeDomainIdx.value  = 0;
         data.forEach(e => {
@@ -368,8 +357,42 @@ export function setDomainView(mode) { DomainResults.domainView.value = mode; }
 
 // ─── Register reScan + reactive watches ──────────────────────────────────────
 
-registerReScan(ioc => { ipInputText.value = ioc; doIPScan(); });
+registerReScan((ioc, iocType = 'ip') => {
+    if (iocType === 'hash') {
+        currentIOCMode.value = 'hash';
+        hashInputText.value = ioc;
+        doHashScanAction();
+        return;
+    }
+    if (iocType === 'domain') {
+        currentIOCMode.value = 'domain';
+        DomainResults.domainInputText.value = ioc;
+        doDomainScan();
+        return;
+    }
+    currentIOCMode.value = 'ip';
+    ipInputText.value = ioc;
+    doIPScan();
+});
 
 watch(ipInputText,   v => { IPResults.ipBulkCount.value   = v.trim() ? IPResults.extractIPs(v).length   : 0; });
 watch(hashInputText, v => { HashResults.hashBulkCount.value = v.trim() ? HashResults.extractHashes(v).length : 0; });
 watch(DomainResults.domainInputText, v => { DomainResults.domainBulkCount.value = v.trim() ? DomainResults.extractDomains(v).length : 0; });
+
+export function resetScanState() {
+    ipInputText.value = '';
+    hashInputText.value = '';
+    DomainResults.domainInputText.value = '';
+    IPResults.allResults.value = [];
+    IPResults.activeIdx.value = 0;
+    IPResults.ipError.value = '';
+    IPResults.ipBulkCount.value = 0;
+    HashResults.allHashResults.value = [];
+    HashResults.activeHashIdx.value = 0;
+    HashResults.hashError.value = '';
+    HashResults.hashBulkCount.value = 0;
+    DomainResults.allDomainResults.value = [];
+    DomainResults.activeDomainIdx.value = 0;
+    DomainResults.domainError.value = '';
+    DomainResults.domainBulkCount.value = 0;
+}

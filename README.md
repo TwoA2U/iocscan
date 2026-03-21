@@ -39,7 +39,7 @@ Query indicators against VirusTotal, AbuseIPDB, ThreatFox, ipapi.is, MalwareBaza
 - **Domain enrichment** — VirusTotal multi-engine verdict, reputation, registrar, creation date, A records, categories, and ThreatFox C2 intelligence
 - **Multi-signal risk scoring** — `riskLevel` computed from manifest-driven rules across all integrations; any single signal can escalate the level independently
 - **Plugin architecture** — each integration is a self-contained Go file implementing a single interface; adding a new vendor requires one file and one registry line
-- **Web UI** — Tailwind CSS + Vue 3, cards/table views, column visibility toggles, export to CSV/JSON, scan history. Cards show full vendor data including AbuseIPDB categories, VirusTotal last scanned time, and GreyNoise classification. Cards with API errors are hidden automatically — error detail remains in the raw JSON panel
+- **Web UI** — Tailwind CSS + Vue 3, authenticated scanner, cards/table views, column visibility toggles, export to CSV/JSON, scan history, and per-vendor cache diagnostics. Cards show full vendor data including AbuseIPDB categories, VirusTotal last scanned time, and GreyNoise classification. Benign no-hit cards are hidden automatically — miss/error detail remains available in diagnostics and raw JSON
 - **Bulk scanning** — up to 100 IPs, hashes, or domains per request
 - **Local cache** — SQLite-backed caching per integration to avoid redundant API calls
 - **Rate limiting** — built-in token-bucket limiter with 1 MB request body cap
@@ -118,9 +118,20 @@ iocscan -p 9090      # custom port
 iocscan --help       # show usage
 ```
 
-### 2. Enter your API keys
+### 2. Sign in
 
-Open your browser. The API Keys panel at the top accepts keys for each vendor. Keys are sent per-scan request.
+Open `http://localhost:8080/` in your browser and sign in.
+
+Default first-run credentials:
+
+- Username: `admin`
+- Password: `admin`
+
+On first login, the default admin account must change its password before scanning.
+
+### 3. Configure API keys
+
+After signing in, open `Settings` and save the vendor API keys for the current account.
 
 | Vendor | Key source | Required |
 |--------|-----------|----------|
@@ -130,9 +141,9 @@ Open your browser. The API Keys panel at the top accepts keys for each vendor. K
 | abuse.ch | [bazaar.abuse.ch/api](https://bazaar.abuse.ch/api/) | No — MalwareBazaar + ThreatFox |
 | GreyNoise | [viz.greynoise.io/signup](https://viz.greynoise.io/signup) | No — 10 lookups/day without |
 
-Keys are entered in the API Keys panel in the web UI. They are sent per-scan and never stored on disk.
+API keys are stored server-side per user, encrypted at rest, and used automatically for future scans from that account.
 
-### 3. Config file (optional)
+### 4. Config file (optional)
 
 Create `~/.iocscan/config.yaml` to set a default port or database path:
 
@@ -156,20 +167,35 @@ The `-p` flag always overrides the config file port.
 
 | Feature | Description |
 |---------|-------------|
-| Cards view | Per-indicator detail cards with risk badges and source links. Cards with errors are hidden — data still visible in raw JSON panel |
+| Authenticated UI | Login page, per-user session, admin user management, settings page |
+| Cards view | Per-indicator detail cards with risk badges and source links. Benign no-hit cards are hidden; diagnostics and raw JSON still show miss/error detail |
 | Table view | Sortable multi-indicator comparison table |
 | Column toggles | Show/hide individual fields per section |
 | Bulk input | Paste multiple indicators or upload a `.txt` / `.csv` file |
 | Export | Download results as CSV or JSON |
 | Copy | Copy to clipboard as JSON, CSV, or raw indicators only |
 | Scan history | Last 20 scans with one-click re-scan |
-| Cache toggle | Per-scan control over SQLite result caching |
+| Cache diagnostics | Per-vendor cache hit/live status, result status, and error detail via the Diagnostics panel on result cards |
+| Cache toggle | Per-scan control over SQLite result caching (`use_cache` prefers cache before live lookup) |
 
 ---
 
 ## API Reference
 
 All API responses use `Content-Type: application/json`, including errors.
+
+### Authentication
+
+The web UI uses cookie-backed sessions.
+
+Public auth routes:
+
+- `POST /auth/login`
+- `POST /auth/logout`
+- `GET /auth/me`
+- `POST /auth/change-password`
+
+Protected API routes require an authenticated session cookie.
 
 ### `GET /api/health`
 
@@ -183,13 +209,11 @@ Returns the full manifest for every registered integration. The frontend fetches
 
 ### `POST /api/scan`
 
-IP enrichment.
+IP enrichment. In normal web UI use, vendor API keys are loaded from the authenticated user's saved settings rather than sent in the request body.
 
 ```json
 {
   "ip": "1.2.3.4",
-  "vt_key": "...", "abuse_key": "...", "ipapi_key": "...",
-  "abusech_key": "...", "greynoise_key": "...",
   "use_cache": true
 }
 ```
@@ -201,7 +225,6 @@ Hash enrichment. Accepts up to 100 hashes (MD5, SHA1, or SHA256).
 ```json
 {
   "hashes": ["<hash1>", "<hash2>"],
-  "vt_key": "...", "abusech_key": "...",
   "use_cache": true
 }
 ```
@@ -213,7 +236,6 @@ Mixed IOC enrichment. IPs, hashes, and domains are auto-detected and routed to t
 ```json
 {
   "iocs": ["1.2.3.4", "<sha256>", "evil.com"],
-  "vt_key": "...", "abuse_key": "...", "abusech_key": "...", "greynoise_key": "...",
   "use_cache": true
 }
 ```
@@ -242,6 +264,12 @@ Current cache tables: `VT_IP`, `ABUSE_IP`, `IPAPIIS_IP`, `GN_IP`, `VT_HASH`, `MB
 {
   "ipAddress": "45.77.34.87",
   "riskLevel": "CRITICAL",
+  "cached": false,
+  "cacheHits": { "virustotal_ip": true, "abuseipdb": true },
+  "diagnostics": {
+    "virustotal_ip": { "cache": "hit", "status": "ok" },
+    "threatfox_ip": { "cache": "live", "status": "not_found" }
+  },
   "geo": { "isp": "Vultr", "country": "Singapore", "city": "Singapore", "timezone": "Asia/Singapore" },
   "virustotal": {
     "malicious": 5, "suspicious": 1, "reputation": -11,
@@ -265,7 +293,7 @@ Current cache tables: `VT_IP`, `ABUSE_IP`, `IPAPIIS_IP`, `GN_IP`, `VT_HASH`, `MB
 
 ```json
 {
-  "hash": "d55f983c...", "hashType": "SHA256", "riskLevel": "CRITICAL",
+  "hash": "d55f983c...", "hashType": "SHA256", "riskLevel": "CRITICAL", "cached": true,
   "virustotal": { "malicious": 58, "suggestedThreatLabel": "trojan.sodinokibi/revil" },
   "malwarebazaar": { "queryStatus": "ok", "signature": "Sodinokibi", "fileName": "revil.exe" },
   "threatfox": { "queryStatus": "ok" }
@@ -276,7 +304,7 @@ Current cache tables: `VT_IP`, `ABUSE_IP`, `IPAPIIS_IP`, `GN_IP`, `VT_HASH`, `MB
 
 ```json
 {
-  "domain": "evil.com", "riskLevel": "HIGH",
+  "domain": "evil.com", "riskLevel": "HIGH", "cached": false,
   "vtDomain": { "malicious": 8, "registrar": "NameCheap", "suggestedThreatLabel": "malware.generic" },
   "threatfox": { "queryStatus": "ok", "malware": "win.emotet", "confidenceLevel": 75 }
 }
@@ -348,6 +376,13 @@ Linux and Windows binaries are compressed with UPX. macOS binaries are left unco
 ```
 iocscan/
 ├── main.go                        — entry point: -p flag, config load, server start
+├── admin/
+│   └── handlers.go                — admin-only user management handlers
+├── auth/
+│   ├── handlers.go                — login/logout/session/password change handlers
+│   ├── middleware.go              — RequireAuth / RequireAdmin
+│   ├── models.go                  — users and encrypted per-user API keys
+│   └── session.go                 — persistent session store
 ├── config/
 │   └── config.go                  — load ~/.iocscan/config.yaml via gopkg.in/yaml.v3
 ├── server/
@@ -366,6 +401,7 @@ iocscan/
 │   └── httpclient/http.go         — shared HTTP client with context support
 ├── utils/
 │   ├── common.go                  — dynamic InitDB(), cache helpers
+│   ├── diagnostics.go             — per-vendor cache/status diagnostics for legacy responses
 │   ├── orchestrator.go            — generic Scan() fan-out, ScanResult, BuildKeys()
 │   ├── iputil.go                  — IP output types, IPProcessor, GNResult
 │   ├── iputil_shim.go             — Lookup() -> Scan() -> ComplexResult
@@ -375,11 +411,14 @@ iocscan/
 │   └── iocutil.go                 — IOC type detection (IP, hash, domain)
 └── web/
     ├── components/
+    │   ├── AdminPage.js           — admin user management UI
     │   ├── ColumnDrawer.js        — column visibility drawer
-    │   ├── IntegrationCard.js     — generic card renderer (driven by manifests)
+    │   ├── LoginPage.js           — login form
     │   ├── IOCScanner.js          — main scanner (IP, Hash, Domain tabs)
+    │   ├── SettingsPage.js        — password change + API key management
     │   └── ResultsTable.js        — sortable results table
     ├── composables/
+    │   ├── useAuth.js             — auth/session/page state + authenticated fetch wrapper
     │   ├── useColumnVisibility.js — column toggle state
     │   ├── useDomainResults.js    — domain scan state, table, export
     │   ├── useHashResults.js      — hash scan state, table, export
@@ -417,17 +456,17 @@ iocscan/
 | File | Change |
 |------|--------|
 | `web/components/IOCScanner.js` | Add hardcoded card template for the new vendor |
-| `web/composables/useIOCScan.js` | Add key to `keys` reactive object + scan request body (if vendor requires a key) |
+| `auth/models.go` / `auth/handlers.go` | Add encrypted per-user key storage fields if the vendor requires a new key |
 
 **Additional wiring for IP integrations that require a key** (e.g. GreyNoise):
 
 | File | Change |
 |------|--------|
-| `server/server.go` | Add `YourVendorKey` field to `scanRequest` struct, pass to `NewIPProcessor` |
+| `server/server.go` | Load the stored key and pass it through to the processor/orchestrator |
 | `utils/iputil.go` | Add `yourvendorKey` field to `IPProcessor`, update `NewIPProcessor` signature |
 | `utils/iputil_shim.go` | Pass `keys["yourvendor"] = p.yourvendorKey` |
 
-> **Note:** The frontend card template and key wiring are currently manual steps because the card rendering for IP scans is not yet fully manifest-driven. This will be eliminated when the shim layer is removed — at that point, new integrations will truly require only the 2 backend files.
+> **Note:** The frontend card template is still manual for the legacy scanner path. Key entry is no longer sent per scan from the browser — keys are managed in `Settings` and loaded server-side for the authenticated user.
 
 ### Step 1 — Create `integrations/yourvendor.go`
 
@@ -558,37 +597,18 @@ In `web/components/IOCScanner.js`, add a card inside the IP cards grid (before t
 
 ### Step 5 — Wire the API key (if your integration requires one)
 
-**`web/composables/useIOCScan.js`** — add the key to the reactive state and scan request:
-
-```js
-// Add to keys reactive object
-export const keys = reactive({ vt: '', abuse: '', ..., yourvendor: '' });
-
-// Add to the /api/scan request body in doIPScan()
-yourvendor_key: keys.yourvendor,
-```
-
-**`web/components/IOCScanner.js`** — add a key input to the API Keys panel:
-
-```js
-<div>
-  <label ... >Your Vendor <span style="color:#2e4060">(optional)</span></label>
-  <input type="password" v-model="keys.yourvendor" class="key-input"
-         placeholder="Leave blank for free tier…">
-</div>
-```
-
-**`server/server.go`** — add the key field to the request struct and pass it through:
+**`auth/models.go`** — add encrypted storage for the new key:
 
 ```go
-type scanRequest struct {
+type APIKeys struct {
     // ... existing fields ...
-    YourVendorKey string `json:"yourvendor_key"`
+    YourVendorKey string
 }
-
-// Pass to NewIPProcessor:
-processor := utils.NewIPProcessor(..., req.YourVendorKey)
 ```
+
+**`auth/handlers.go`** — include the key in save/load handlers so `Settings` can persist it.
+
+**`web/components/SettingsPage.js`** — add an input so users can manage the new key in `Settings`.
 
 **`utils/iputil.go`** — add to `IPProcessor` and `NewIPProcessor`:
 
@@ -610,7 +630,7 @@ keys := BuildKeys(p.vtKey, p.abuseKey, p.ipapiKey, p.abusechKey)
 keys["yourvendor"] = p.yourvendorKey
 ```
 
-> **Note:** This key wiring boilerplate is a known limitation. It will be eliminated when the auth system is implemented — at that point, keys come from the database and the request body only carries the scan target, not credentials.
+> **Note:** The shim/key plumbing inside `utils/iputil.go` and `utils/iputil_shim.go` still exists for backward-compatible typed responses. Browser-side per-scan key wiring no longer exists; keys are managed in `Settings` and loaded server-side for the authenticated user.
 
 ---
 
@@ -624,21 +644,17 @@ Domain integrations do not have this limitation.
 
 **Planned fix:** Remove shims when the frontend migrates to consuming `ScanResult` directly via manifests. Planned alongside the auth system.
 
-### 2. Error card hiding
+### 2. Hidden no-hit and error cards
 
-Cards that return an error (missing API key, rate limit, network failure) are hidden from the UI to avoid clutter. The raw error message is still present in the JSON panel below the cards for debugging. Cards that return a valid "not found" response (`no_results`, `hash_not_found`) still render — only hard errors are suppressed.
+Benign no-hit cards (`not_found`, `no_results`, `hash_not_found`, `not_observed`) are hidden from the main card grid to reduce clutter. Hard-error cards are also suppressed. Miss/error detail remains available through the Diagnostics panel and the raw JSON output.
 
-### 3. No authentication
+### 3. Shared local cache
 
-The current release has no user authentication. API keys are entered in the browser per session and are not persisted between sessions. Designed for local or trusted LAN use only.
+Cache entries are shared at the application/database level, not isolated per user. That is appropriate for a local or small-team deployment, but it means users benefit from each other's cached vendor results.
 
-**Planned fix:** Full auth system — users, `httpOnly` session cookies, server-side AES-256-GCM encrypted API key storage. See `COMBINED_PLAN.md` for details.
+### 4. Legacy shim layer still exists
 
-### 4. Hardcoded key fields in API request
-
-Each vendor key is a separate named field in the request body (`vt_key`, `abuse_key`, `greynoise_key`, etc.). Adding a new integration that requires a key means adding a new field to the request struct in `server/server.go`.
-
-**Planned fix:** Replace with a generic `"keys": { "keyref": "value" }` map when the auth system is implemented (keys will come from the database, not the request body).
+`/api/scan`, `/api/scan/hash`, and `/api/scan/ioc` still return backward-compatible typed result shapes (`ComplexResult`, `HashResult`, `DomainResult`) built from the generic orchestrator output. This keeps the current scanner UI stable, but it means some integration additions still require shim mapping and card wiring.
 
 ### 5. AbuseIPDB categories require verbose mode
 
@@ -671,7 +687,7 @@ go build -o iocscan .
 ./iocscan
 ```
 
-Open `http://localhost:8080`, enter API keys in the panel, and start scanning.
+Open `http://localhost:8080`, sign in, save API keys in `Settings`, and start scanning.
 
 During development, iocscan reads `web/` directly from disk when the directory exists — edit frontend files and refresh without rebuilding.
 

@@ -42,8 +42,12 @@ func LookupHash(ctx context.Context, hash, vtKey, abusechKey string, useCache bo
 
 	result := buildHashResult(hash, hashType, sr)
 
-	// Cached = true when every integration served from local cache.
-	result.Cached = len(sr.CacheHits) > 0 && len(sr.CacheHits) == len(sr.Results)
+	// Cached = true only when every integration involved in the scan
+	// was served from local cache, including integrations that otherwise
+	// would have landed in the error bucket.
+	result.Cached = len(sr.CacheHits) > 0 && len(sr.CacheHits) == len(sr.Results)+len(sr.Errors)
+	result.CacheHits = sr.CacheHits
+	result.Diagnostics = buildVendorDiagnostics(sr)
 
 	j, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {

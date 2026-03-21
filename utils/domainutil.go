@@ -1,14 +1,17 @@
 // utils/domainutil.go — Domain enrichment types and LookupDomain orchestrator.
 //
 // Follows the same pattern as iputil_shim.go:
-//   LookupDomain() → Scan() → DomainResult (backward-compatible JSON)
+//
+//	LookupDomain() → Scan() → DomainResult (backward-compatible JSON)
 //
 // Supported integrations (auto-selected by registry.ForIOCType):
-//   virustotal_domain  — multi-engine verdict, reputation, registrar, categories
-//   threatfox_domain   — C2/botnet IOC intelligence
+//
+//	virustotal_domain  — multi-engine verdict, reputation, registrar, categories
+//	threatfox_domain   — C2/botnet IOC intelligence
 //
 // Public API:
-//   LookupDomain(ctx, domain, vtKey, abusechKey string, useCache bool) (string, error)
+//
+//	LookupDomain(ctx, domain, vtKey, abusechKey string, useCache bool) (string, error)
 package utils
 
 import (
@@ -46,10 +49,12 @@ type DomainVT struct {
 
 // DomainResult is the unified output of a domain lookup.
 type DomainResult struct {
-	Domain    string      `json:"domain"`
-	RiskLevel string      `json:"riskLevel"`
-	Cached    bool        `json:"cached"`
-	Links     DomainLinks `json:"links"`
+	Domain      string                      `json:"domain"`
+	RiskLevel   string                      `json:"riskLevel"`
+	Cached      bool                        `json:"cached"`
+	CacheHits   map[string]bool             `json:"cacheHits,omitempty"`
+	Diagnostics map[string]VendorDiagnostic `json:"diagnostics,omitempty"`
+	Links       DomainLinks                 `json:"links"`
 
 	VirusTotal integrations.IPVirusTotal `json:"virustotal"` // reuse IP VT type (same fields)
 	VTDomain   DomainVT                  `json:"vtDomain"`   // domain-specific VT fields
@@ -79,8 +84,12 @@ func LookupDomain(ctx context.Context, domain, vtKey, abusechKey string, useCach
 
 	result := buildDomainResult(domain, sr)
 
-	// Cached = true when every integration served from local cache.
-	result.Cached = len(sr.CacheHits) > 0 && len(sr.CacheHits) == len(sr.Results)
+	// Cached = true only when every integration involved in the scan
+	// was served from local cache, including integrations that otherwise
+	// would have landed in the error bucket.
+	result.Cached = len(sr.CacheHits) > 0 && len(sr.CacheHits) == len(sr.Results)+len(sr.Errors)
+	result.CacheHits = sr.CacheHits
+	result.Diagnostics = buildVendorDiagnostics(sr)
 
 	j, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {

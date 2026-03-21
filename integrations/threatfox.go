@@ -25,8 +25,8 @@ const tfEndpoint = "https://threatfox-api.abuse.ch/api/v1/"
 
 // tfResponse is the top-level envelope returned by every ThreatFox query.
 type tfResponse struct {
-	QueryStatus string    `json:"query_status"`
-	Data        []tfEntry `json:"data"`
+	QueryStatus string          `json:"query_status"`
+	Data        json.RawMessage `json:"data"`
 }
 
 // tfEntry is one IOC record from ThreatFox.
@@ -153,17 +153,27 @@ func FetchTFIP(ctx context.Context, ip, apiKey string) (*TFIPResult, error) {
 	if err := json.Unmarshal(raw, &resp); err != nil {
 		return &TFIPResult{QueryStatus: "parse_error"}, fmt.Errorf("FetchTFIP parse: %w", err)
 	}
-	return parseTFIPResult(resp), nil
+	if resp.QueryStatus != "ok" {
+		return &TFIPResult{QueryStatus: resp.QueryStatus}, nil
+	}
+
+	var entries []tfEntry
+	if len(resp.Data) > 0 && string(resp.Data) != "null" {
+		if err := json.Unmarshal(resp.Data, &entries); err != nil {
+			return &TFIPResult{QueryStatus: "parse_error"}, fmt.Errorf("FetchTFIP data parse: %w", err)
+		}
+	}
+	return parseTFIPResult(resp.QueryStatus, entries), nil
 }
 
 // parseTFIPResult maps the raw ThreatFox response into TFIPResult.
-func parseTFIPResult(resp tfResponse) *TFIPResult {
-	result := &TFIPResult{QueryStatus: resp.QueryStatus}
-	if resp.QueryStatus != "ok" || len(resp.Data) == 0 {
+func parseTFIPResult(queryStatus string, entries []tfEntry) *TFIPResult {
+	result := &TFIPResult{QueryStatus: queryStatus}
+	if queryStatus != "ok" || len(entries) == 0 {
 		return result
 	}
 
-	e := resp.Data[0] // use the first (highest-confidence) entry
+	e := entries[0] // use the first (highest-confidence) entry
 	result.ThreatType = e.ThreatType
 	result.Malware = e.Malware
 	result.MalwareAlias = e.MalwareAlias
@@ -205,16 +215,26 @@ func FetchTFHash(ctx context.Context, hash, apiKey string) (*TFHashResult, error
 	if err := json.Unmarshal(raw, &resp); err != nil {
 		return &TFHashResult{QueryStatus: "parse_error"}, fmt.Errorf("FetchTFHash parse: %w", err)
 	}
-	return parseTFHashResult(resp), nil
+	if resp.QueryStatus != "ok" {
+		return &TFHashResult{QueryStatus: resp.QueryStatus}, nil
+	}
+
+	var entries []tfEntry
+	if len(resp.Data) > 0 && string(resp.Data) != "null" {
+		if err := json.Unmarshal(resp.Data, &entries); err != nil {
+			return &TFHashResult{QueryStatus: "parse_error"}, fmt.Errorf("FetchTFHash data parse: %w", err)
+		}
+	}
+	return parseTFHashResult(resp.QueryStatus, entries), nil
 }
 
 // parseTFHashResult maps the raw ThreatFox response into TFHashResult.
-func parseTFHashResult(resp tfResponse) *TFHashResult {
-	result := &TFHashResult{QueryStatus: resp.QueryStatus}
-	if resp.QueryStatus != "ok" || len(resp.Data) == 0 {
+func parseTFHashResult(queryStatus string, entries []tfEntry) *TFHashResult {
+	result := &TFHashResult{QueryStatus: queryStatus}
+	if queryStatus != "ok" || len(entries) == 0 {
 		return result
 	}
-	for _, e := range resp.Data {
+	for _, e := range entries {
 		entry := TFHashEntry{
 			IOC:             e.IOC,
 			ThreatType:      e.ThreatType,
@@ -317,6 +337,11 @@ func (t ThreatFoxIPIntegration) Run(ctx context.Context, ioc, apiKey string, use
 
 	r, err := FetchTFIP(ctx, ioc, apiKey)
 	if err != nil {
+		if r != nil {
+			if b, e := json.Marshal(r); e == nil {
+				cachedPut(ioc, string(b), "TF_IP")
+			}
+		}
 		return &Result{Error: err.Error()}, nil
 	}
 	if r != nil {
@@ -417,6 +442,11 @@ func (t ThreatFoxHashIntegration) Run(ctx context.Context, ioc, apiKey string, u
 
 	r, err := FetchTFHash(ctx, ioc, apiKey)
 	if err != nil {
+		if r != nil {
+			if b, e := json.Marshal(r); e == nil {
+				cachedPut(ioc, string(b), "TF_HASH")
+			}
+		}
 		return &Result{Error: err.Error()}, nil
 	}
 	if r != nil {

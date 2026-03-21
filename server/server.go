@@ -4,13 +4,14 @@
 // All handlers are plain http.HandlerFunc — no Chi-specific types used inside them.
 //
 // Routes:
-//   GET  /                   → HTML single-page app (and all web/ static assets)
-//   GET  /api/health         → health check
-//   GET  /api/integrations   → integration manifests
-//   POST /api/scan           → IP enrichment
-//   POST /api/scan/hash      → Hash enrichment
-//   POST /api/scan/ioc       → Mixed IOC enrichment
-//   POST /api/cache/clear    → Cache management
+//
+//	GET  /                   → HTML single-page app (and all web/ static assets)
+//	GET  /api/health         → health check
+//	GET  /api/integrations   → integration manifests
+//	POST /api/scan           → IP enrichment
+//	POST /api/scan/hash      → Hash enrichment
+//	POST /api/scan/ioc       → Mixed IOC enrichment
+//	POST /api/cache/clear    → Cache management
 //
 // Rate limiting: per-IP token-bucket (5 req burst, 1 req/500ms) on scan endpoints.
 // Context propagation: r.Context() threaded through to vendor calls so a browser
@@ -259,38 +260,61 @@ func loadKeys(r *http.Request) *auth.APIKeys {
 	if user != nil {
 		keys, err := auth.GetKeys(globalDB, user.ID, globalEncKey)
 		if err == nil {
-			// Fill any empty DB keys from config file as fallback.
-			if cfg, cerr := utils.GetAPI(globalCfgFile); cerr == nil {
-				if keys.VTKey == "" {
-					keys.VTKey = cfg.VTAPI
-				}
-				if keys.AbuseKey == "" {
-					keys.AbuseKey = cfg.AbuseAPI
-				}
-				if keys.IPApiKey == "" {
-					keys.IPApiKey = cfg.IPapiAPI
-				}
-				if keys.AbuseCHKey == "" {
-					keys.AbuseCHKey = cfg.AbuseCHAPI
-				}
-				if keys.GreyNoiseKey == "" {
-					keys.GreyNoiseKey = cfg.GreyNoiseAPI
-				}
-			}
+			// Fill any empty DB keys from config as a backward-compatible fallback.
+			applyConfigFallback(keys)
 			return keys
 		}
 	}
 	// No session user (shouldn't happen since RequireAuth runs first) —
 	// fall back to config file only.
 	keys := &auth.APIKeys{}
-	if cfg, err := utils.GetAPI(globalCfgFile); err == nil {
+	applyConfigFallback(keys)
+	return keys
+}
+
+func applyConfigFallback(keys *auth.APIKeys) {
+	if keys == nil {
+		return
+	}
+
+	// Legacy fallback for existing installs still using ~/.iocscan.yaml.
+	cfg, err := utils.GetAPI(globalCfgFile)
+	if err != nil || legacyKeysEmpty(cfg) {
+		// If a custom config path points at the new config format, also try
+		// the legacy default path before giving up.
+		if globalCfgFile != "" {
+			cfg, err = utils.GetAPI("")
+		}
+		if err != nil || legacyKeysEmpty(cfg) {
+			return
+		}
+	}
+	if keys.VTKey == "" {
 		keys.VTKey = cfg.VTAPI
+	}
+	if keys.AbuseKey == "" {
 		keys.AbuseKey = cfg.AbuseAPI
+	}
+	if keys.IPApiKey == "" {
 		keys.IPApiKey = cfg.IPapiAPI
+	}
+	if keys.AbuseCHKey == "" {
 		keys.AbuseCHKey = cfg.AbuseCHAPI
+	}
+	if keys.GreyNoiseKey == "" {
 		keys.GreyNoiseKey = cfg.GreyNoiseAPI
 	}
-	return keys
+}
+
+func legacyKeysEmpty(cfg *utils.CollectionAPI) bool {
+	if cfg == nil {
+		return true
+	}
+	return cfg.VTAPI == "" &&
+		cfg.AbuseAPI == "" &&
+		cfg.IPapiAPI == "" &&
+		cfg.AbuseCHAPI == "" &&
+		cfg.GreyNoiseAPI == ""
 }
 
 // ── Scan request types ────────────────────────────────────────────────────────
@@ -487,7 +511,7 @@ func serveIOCScan(w http.ResponseWriter, r *http.Request) {
 		defer pipelineWg.Done()
 		runChunked(ctx, len(domainIdxs), 5, 500*time.Millisecond, func(i int) {
 			idx := domainIdxs[i]
-			raw, err := utils.LookupDomain(ctx, results[idx].IOC, req.VTKey, req.AbuseCHKey, req.UseCache)
+			raw, err := utils.LookupDomain(ctx, results[idx].IOC, keys.VTKey, keys.AbuseCHKey, req.UseCache)
 			if err != nil {
 				results[idx].Error = err.Error()
 				return
@@ -506,12 +530,12 @@ func serveCacheClear(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewDecoder(r.Body).Decode(&req)
 
-	tables := []string{"VT_IP", "ABUSE_IP", "IPAPIIS_IP", "GN_IP", "VT_HASH", "MB_HASH", "TF_IP", "TF_HASH"}
+	tables := []string{"VT_IP", "ABUSE_IP", "IPAPIIS_IP", "GN_IP", "VT_HASH", "MB_HASH", "TF_IP", "TF_HASH", "VT_DOMAIN", "TF_DOMAIN"}
 	if req.Table != "" && req.Table != "all" {
 		tables = []string{req.Table}
 	}
 
-	cleared := utils.ClearHashCaches(tables)
+	cleared := utils.ClearCaches(tables)
 	writeJSON(w, map[string]any{
 		"cleared": cleared,
 		"tables":  tables,

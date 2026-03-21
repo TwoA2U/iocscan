@@ -39,9 +39,9 @@ export default defineComponent({
     template: `
     <div class="col-drawer-wrap">
       <!-- Trigger button -->
-      <button class="action-btn flex items-center gap-2" @click="openColDrawer">
-        ⚙ COLUMNS
-        <span style="color:#38bdf8;font-size:0.62rem">{{ colBadge }}</span>
+      <button class="act-btn col-trigger" @click="openColDrawer">
+        <span class="opacity-70">Columns</span>
+        <span class="col-trigger-badge">{{ colBadge }}</span>
       </button>
 
       <!-- Click-away overlay (z-index below drawer) -->
@@ -134,8 +134,8 @@ export default defineComponent({
 
         <!-- Show All / Hide All footer -->
         <div class="flex gap-2 p-3 border-t" style="border-color:#1e2d42">
-          <button class="action-btn flex-1" @click="setAllColsProxy(true)">Show All</button>
-          <button class="action-btn flex-1" @click="setAllColsProxy(false)">Hide All</button>
+          <button class="act-btn flex-1 justify-center" @click="setAllColsProxy(true)">Show All</button>
+          <button class="act-btn flex-1 justify-center" @click="setAllColsProxy(false)">Hide All</button>
         </div>
 
       </div>

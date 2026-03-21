@@ -7,10 +7,17 @@
 
 import ColumnDrawer from './ColumnDrawer.js';
 import ResultsTable from './ResultsTable.js';
+import {
+    currentUser,
+    isAdmin,
+    goToSettings,
+    goToAdmin,
+    logout,
+} from '../composables/useAuth.js';
 
 import {
     // State
-    keys, ipInputText, hashInputText,
+    ipInputText, hashInputText,
     ipUseCache, hashUseCache, isDragging,
     ipBulkCount, hashBulkCount,
     currentIOCMode, currentView, hashView, wideShell,
@@ -33,7 +40,7 @@ import {
     switchIOCMode, setView, setHashView, switchTab, switchToCard,
     riskDotColor, vtStatPart, abuseColor, formatBytes, toArr, yn,
     openColDrawer, closeColDrawer, toggleHistDrawer,
-    clearHistory, reScan,
+    clearHistory, reScan, resetScanState,
     doIPScan, doHashScanAction,
     handleIPFileUpload, handleIPDrop, clearIPBulk,
     handleHashFileUpload, clearHashBulk,
@@ -53,15 +60,118 @@ import {
 } from '../composables/useIOCScan.js';
 
 const { defineComponent } = Vue;
+const CACHE_SOURCE_LABELS = {
+    virustotal_ip: 'VirusTotal',
+    abuseipdb: 'AbuseIPDB',
+    ipapi: 'ipapi.is',
+    threatfox_ip: 'ThreatFox',
+    greynoise: 'GreyNoise',
+    virustotal_hash: 'VirusTotal',
+    malwarebazaar: 'MalwareBazaar',
+    threatfox_hash: 'ThreatFox',
+    virustotal_domain: 'VirusTotal',
+    threatfox_domain: 'ThreatFox',
+    malwarebazaar: 'MalwareBazaar',
+};
 
 export default defineComponent({
     name: 'IOCScanner',
     components: { ColumnDrawer, ResultsTable },
 
     setup() {
+        async function logoutNow() {
+            resetScanState();
+            await logout();
+        }
+
+        function cacheHitLabels(result) {
+            if (!result || !result.cacheHits) return [];
+            return Object.keys(result.cacheHits)
+                .filter(key => result.cacheHits[key])
+                .map(key => CACHE_SOURCE_LABELS[key] || key);
+        }
+
+        function hasCacheHits(result) {
+            return cacheHitLabels(result).length > 0;
+        }
+
+        function diagnosticEntries(result) {
+            if (!result || !result.diagnostics) return [];
+            return Object.keys(result.diagnostics)
+                .sort()
+                .map(key => ({
+                    key,
+                    label: CACHE_SOURCE_LABELS[key] || key,
+                    cache: result.diagnostics[key].cache || 'live',
+                    status: result.diagnostics[key].status || 'unknown',
+                    error: result.diagnostics[key].error || '',
+                }));
+        }
+
+        function diagnosticCacheLabel(cache) {
+            return cache === 'hit' ? 'Cached' : 'Live';
+        }
+
+        function diagnosticCacheClass(cache) {
+            return cache === 'hit' ? 'diag-chip cache-hit' : 'diag-chip cache-live';
+        }
+
+        function diagnosticStatusLabel(status) {
+            switch (status) {
+            case 'ok': return 'Hit';
+            case 'not_found': return 'No Hit';
+            case 'no_results': return 'No Hit';
+            case 'not_observed': return 'No Hit';
+            case 'no_api_key': return 'No API Key';
+            case 'parse_error': return 'Parse Error';
+            case 'error': return 'Error';
+            default: return status || 'Unknown';
+            }
+        }
+
+        function diagnosticStatusClass(status) {
+            switch (status) {
+            case 'ok': return 'diag-chip status-ok';
+            case 'not_found':
+            case 'no_results':
+            case 'not_observed': return 'diag-chip status-miss';
+            case 'no_api_key': return 'diag-chip status-muted';
+            case 'parse_error':
+            case 'error': return 'diag-chip status-error';
+            default: return 'diag-chip status-muted';
+            }
+        }
+
+        function hasThreatFoxHit(tf) {
+            if (!tf) return false;
+            return tf.queryStatus === 'ok';
+        }
+
+        function showThreatFoxCard(tf) {
+            if (!tf) return false;
+            return tf.queryStatus === 'ok' || tf.queryStatus === 'error' || tf.queryStatus === 'parse_error';
+        }
+
+        function showMalwareBazaarCard(mb) {
+            if (!mb) return false;
+            return mb.queryStatus === 'ok' || mb.queryStatus === 'error' || mb.queryStatus === 'parse_error';
+        }
+
+        function showVirusTotalHashCard(result) {
+            if (!result || !result.virustotal) return false;
+            return !vtNotFound.value;
+        }
+
+        function showGreyNoiseCard(gn) {
+            if (!gn) return false;
+            if (gn.error) return true;
+            return !gn.notObserved;
+        }
+
         return {
             // State
-            keys, ipInputText, hashInputText,
+            currentUser, isAdmin,
+            ipInputText, hashInputText,
             ipUseCache, hashUseCache, isDragging,
             ipBulkCount, hashBulkCount,
             currentIOCMode, currentView, hashView, wideShell,
@@ -84,6 +194,10 @@ export default defineComponent({
             riskDotColor, vtStatPart, abuseColor, formatBytes, toArr, yn,
             openColDrawer, closeColDrawer, toggleHistDrawer,
             clearHistory, reScan,
+            goToSettings, goToAdmin, logoutNow,
+            cacheHitLabels, hasCacheHits, diagnosticEntries,
+            diagnosticCacheLabel, diagnosticCacheClass, diagnosticStatusLabel, diagnosticStatusClass,
+            hasThreatFoxHit, showThreatFoxCard, showMalwareBazaarCard, showVirusTotalHashCard, showGreyNoiseCard,
             doIPScan, doHashScanAction,
             handleIPFileUpload, handleIPDrop, clearIPBulk,
             handleHashFileUpload, clearHashBulk,
@@ -109,31 +223,36 @@ export default defineComponent({
   <header class="site-header">
 
     <!-- Brand -->
-    <div class="flex items-center gap-3 flex-shrink-0">
-      <span class="font-display font-bold text-xl tracking-tight">
-        <span class="text-t1">ioc</span><span class="text-prime">scan</span>
-      </span>
-      <span class="hidden sm:block text-xs font-medium tracking-widest uppercase text-t3 pl-3 border-l border-white/10">
-        Threat Intelligence
-      </span>
+    <div class="header-brand">
+      <div class="brand-mark">
+        <span class="brand-wordmark">
+          <span class="text-t1">ioc</span><span class="text-prime">scan</span>
+        </span>
+      </div>
+      <div class="brand-subcopy">
+        <span class="brand-kicker">Threat Intelligence</span>
+      </div>
     </div>
 
     <!-- Source badges -->
-    <div class="header-sources flex items-center gap-2 ml-auto">
-      <span class="src-chip" style="color:#22d3ee;border-color:rgba(34,211,238,0.25)">VirusTotal</span>
-      <span class="src-chip" style="color:#fb923c;border-color:rgba(251,146,60,0.25)">AbuseIPDB</span>
-      <span class="src-chip" style="color:#4ade80;border-color:rgba(74,222,128,0.25)">ipapi.is</span>
-      <span class="src-chip" style="color:#c084fc;border-color:rgba(192,132,252,0.25)">abuse.ch</span>
-      <span class="src-chip" style="color:#fcd34d;border-color:rgba(252,211,77,0.25)">ThreatFox</span>
+    <div class="header-sources-wrap">
+      <div class="header-sources-label">Active Sources</div>
+      <div class="header-sources">
+        <span class="src-chip" style="color:#22d3ee;border-color:rgba(34,211,238,0.25)">VirusTotal</span>
+        <span class="src-chip" style="color:#fb923c;border-color:rgba(251,146,60,0.25)">AbuseIPDB</span>
+        <span class="src-chip" style="color:#4ade80;border-color:rgba(74,222,128,0.25)">ipapi.is</span>
+        <span class="src-chip" style="color:#c084fc;border-color:rgba(192,132,252,0.25)">abuse.ch</span>
+        <span class="src-chip" style="color:#fcd34d;border-color:rgba(252,211,77,0.25)">ThreatFox</span>
+      </div>
     </div>
 
     <!-- Right actions -->
-    <div class="flex items-center gap-2 ml-3">
+    <div class="header-actions">
 
       <!-- History -->
-      <div style="position:relative">
+      <div class="header-action-group" style="position:relative">
         <button class="act-btn" @click="toggleHistDrawer">
-          <span class="opacity-60">⏱</span>
+          <span class="btn-glyph">⏱</span>
           History
           <span class="font-mono text-prime bg-prime/10 border border-prime/20 px-1.5 py-0 rounded text-xs">{{ scanHist.length }}</span>
         </button>
@@ -147,7 +266,7 @@ export default defineComponent({
           </div>
           <div class="overflow-y-auto flex-1">
             <p v-if="!scanHist.length" class="text-center py-5 text-t3 text-xs italic">No scans yet</p>
-            <div v-for="(h,i) in scanHist" :key="h.ip+i" class="hist-item" @click="reScan(h.ip)">
+            <div v-for="(h,i) in scanHist" :key="h.ip+i" class="hist-item" @click="reScan(h.ip, h.iocType || 'ip')">
               <div class="flex items-center gap-2 min-w-0">
                 <span class="font-mono text-xs text-t1 truncate">{{ h.ip }}</span>
                 <span v-if="h.scanCount>1" class="text-t3 text-xs flex-shrink-0">×{{ h.scanCount }}</span>
@@ -160,42 +279,23 @@ export default defineComponent({
 
       <!-- Columns -->
       <column-drawer></column-drawer>
+      <div class="account-chip">
+        <span class="account-dot"></span>
+        <span class="account-name">{{ currentUser ? currentUser.username : '' }}</span>
+      </div>
+      <button class="act-btn" @click="goToSettings"><span class="btn-glyph">⚙</span>Settings</button>
+      <button v-if="isAdmin" class="act-btn accent" @click="goToAdmin"><span class="btn-glyph">⌘</span>Admin</button>
+      <button class="act-btn danger" @click="logoutNow"><span class="btn-glyph">↗</span>Logout</button>
     </div>
   </header>
 
   <!-- ══ PAGE BODY ══════════════════════════════════════════════════ -->
   <div class="px-8 py-8 pb-20" id="shell">
 
-    <!-- API Keys -->
     <div class="keys-panel">
       <span class="keys-panel-label">API Keys</span>
-      <div class="grid gap-3" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
-        <div>
-          <label class="block text-xs font-semibold tracking-wider uppercase text-t3 mb-1.5">VirusTotal</label>
-          <input type="password" v-model="keys.vt" class="key-input" placeholder="Required for IP, hash, domain…">
-        </div>
-        <div>
-          <label class="block text-xs font-semibold tracking-wider uppercase text-t3 mb-1.5">AbuseIPDB</label>
-          <input type="password" v-model="keys.abuse" class="key-input" placeholder="Required for IP scans…">
-        </div>
-        <div>
-          <label class="block text-xs font-semibold tracking-wider uppercase text-t3 mb-1.5">
-            ipapi.is <span class="font-normal normal-case tracking-normal opacity-50">optional</span>
-          </label>
-          <input type="password" v-model="keys.ipapi" class="key-input" placeholder="Free tier works without…">
-        </div>
-        <div>
-          <label class="block text-xs font-semibold tracking-wider uppercase text-t3 mb-1.5">
-            abuse.ch <span class="font-normal normal-case tracking-normal opacity-50">optional</span>
-          </label>
-          <input type="password" v-model="keys.abusech" class="key-input" placeholder="MalwareBazaar + ThreatFox…">
-        </div>
-        <div>
-          <label class="block text-xs font-semibold tracking-wider uppercase text-t3 mb-1.5">
-            GreyNoise <span class="font-normal normal-case tracking-normal opacity-50">optional</span>
-          </label>
-          <input type="password" v-model="keys.greynoise" class="key-input" placeholder="10 lookups/day free…">
-        </div>
+      <div class="text-sm text-t2">
+        API keys are managed in Settings for the signed-in account.
       </div>
     </div>
 
@@ -291,6 +391,36 @@ export default defineComponent({
               <span v-if="activeResultEntry && activeResultEntry.error"
                     class="text-xs text-rm border border-rm/25 px-2 py-0.5 rounded-pill">⚠ partial</span>
             </div>
+            <div v-if="hasCacheHits(activeResult)" class="flex items-center gap-2 mb-5 flex-wrap animate-fade-up">
+              <span class="text-[11px] uppercase tracking-[0.16em] text-t3">Cache Hit</span>
+              <span v-for="label in cacheHitLabels(activeResult)" :key="label"
+                    class="text-xs px-2 py-0.5 border rounded-pill text-prime border-prime/20 bg-prime/10">
+                {{ label }}
+              </span>
+              <span v-if="activeResult.cached" class="text-xs px-2 py-0.5 border rounded-pill text-[#7ee0a0] border-[#7ee0a0]/20 bg-[#7ee0a0]/10">
+                All Cached
+              </span>
+            </div>
+            <details v-if="diagnosticEntries(activeResult).length" class="diag-panel mb-5">
+              <summary class="diag-summary">
+                <span>Diagnostics</span>
+                <span class="diag-summary-meta">{{ diagnosticEntries(activeResult).length }} sources</span>
+              </summary>
+              <div class="diag-grid">
+                <div v-for="entry in diagnosticEntries(activeResult)" :key="'ip-diag-'+entry.key"
+                     class="diag-row">
+                  <div class="diag-source">
+                    <span class="diag-source-name">{{ entry.label }}</span>
+                    <span class="diag-source-key">{{ entry.key }}</span>
+                  </div>
+                  <div class="diag-badges">
+                    <span :class="diagnosticCacheClass(entry.cache)">{{ diagnosticCacheLabel(entry.cache) }}</span>
+                    <span :class="diagnosticStatusClass(entry.status)">{{ diagnosticStatusLabel(entry.status) }}</span>
+                    <span v-if="entry.error" class="diag-chip status-error max-w-[28rem] truncate" :title="entry.error">{{ entry.error }}</span>
+                  </div>
+                </div>
+              </div>
+            </details>
 
             <!-- Cards grid -->
             <div class="grid gap-3 mb-4" style="grid-template-columns:repeat(auto-fill,minmax(290px,1fr))">
@@ -411,11 +541,11 @@ export default defineComponent({
               </div>
 
               <!-- ThreatFox -->
-              <div v-if="activeResult.threatfox && activeResult.threatfox.queryStatus !== 'error'" class="vcard animate-fade-up-4">
+              <div v-if="showThreatFoxCard(activeResult.threatfox)" class="vcard animate-fade-up-4">
                 <div class="vcard-head">
                   <span class="vcard-title">🦊 ThreatFox</span>
                   <div class="flex items-center gap-2">
-                    <span v-if="activeResult.threatfox.queryStatus==='ok'" class="mb-found-badge">✓ Found</span>
+                    <span v-if="hasThreatFoxHit(activeResult.threatfox)" class="mb-found-badge">✓ Found</span>
                     <span v-else class="mb-notfound-badge">{{ activeResult.threatfox.queryStatus || 'No result' }}</span>
                     <a :href="'https://threatfox.abuse.ch/browse.php?search=ioc%3A'+activeResultIP" target="_blank" rel="noopener" class="vcard-link">↗ ThreatFox</a>
                   </div>
@@ -464,14 +594,14 @@ export default defineComponent({
                   </template>
                   <div v-if="activeResult.threatfox.queryStatus!=='ok'" class="kv">
                     <span class="kv-val text-t3 italic" style="font-size:0.66rem">
-                      {{ activeResult.threatfox.queryStatus==='no_results'?'No ThreatFox intelligence for this IP.':activeResult.threatfox.queryStatus }}
+                      {{ activeResult.threatfox.queryStatus==='no_results' || activeResult.threatfox.queryStatus==='not_found' ? 'No ThreatFox intelligence for this IP.' : activeResult.threatfox.queryStatus }}
                     </span>
                   </div>
                 </div>
               </div>
 
               <!-- GreyNoise -->
-              <div v-if="activeResult.greynoise && !activeResult.greynoise.error" class="vcard" style="animation:fadeUp 0.22s ease 0.20s both">
+              <div v-if="showGreyNoiseCard(activeResult.greynoise)" class="vcard" style="animation:fadeUp 0.22s ease 0.20s both">
                 <div class="vcard-head">
                   <span class="vcard-title">🔊 GreyNoise</span>
                   <div class="flex items-center gap-2">
@@ -630,7 +760,34 @@ export default defineComponent({
                     </span>
                     <span v-if="activeHashResult.hashType" class="hash-type-badge">{{ activeHashResult.hashType }}</span>
                     <span v-if="activeHashResult.virustotal&&activeHashResult.virustotal.suggestedThreatLabel" class="hash-threat-label">{{ activeHashResult.virustotal.suggestedThreatLabel }}</span>
+                    <span v-for="label in cacheHitLabels(activeHashResult)" :key="'hash-cache-'+label"
+                          class="text-xs px-2 py-0.5 border rounded-pill text-prime border-prime/20 bg-prime/10">
+                      Cache: {{ label }}
+                    </span>
+                    <span v-if="activeHashResult.cached" class="text-xs px-2 py-0.5 border rounded-pill text-[#7ee0a0] border-[#7ee0a0]/20 bg-[#7ee0a0]/10">
+                      All Cached
+                    </span>
                   </div>
+                  <details v-if="diagnosticEntries(activeHashResult).length" class="diag-panel mt-3">
+                    <summary class="diag-summary">
+                      <span>Diagnostics</span>
+                      <span class="diag-summary-meta">{{ diagnosticEntries(activeHashResult).length }} sources</span>
+                    </summary>
+                    <div class="diag-grid">
+                      <div v-for="entry in diagnosticEntries(activeHashResult)" :key="'hash-diag-'+entry.key"
+                           class="diag-row">
+                        <div class="diag-source">
+                          <span class="diag-source-name">{{ entry.label }}</span>
+                          <span class="diag-source-key">{{ entry.key }}</span>
+                        </div>
+                        <div class="diag-badges">
+                          <span :class="diagnosticCacheClass(entry.cache)">{{ diagnosticCacheLabel(entry.cache) }}</span>
+                          <span :class="diagnosticStatusClass(entry.status)">{{ diagnosticStatusLabel(entry.status) }}</span>
+                          <span v-if="entry.error" class="diag-chip status-error max-w-[24rem] truncate" :title="entry.error">{{ entry.error }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </details>
                 </div>
                 <div class="flex gap-2 flex-shrink-0">
                   <a v-if="hashResultLinks.virustotal && !vtNotFound" :href="hashResultLinks.virustotal" target="_blank" rel="noopener" class="hash-source-link">↗ VT</a>
@@ -680,7 +837,7 @@ export default defineComponent({
                 </div>
 
                 <!-- VirusTotal hash -->
-                <div v-if="(activeHashResult.virustotal&&activeHashResult.virustotal.malicious!=null)||vtNotFound" class="vcard">
+                <div v-if="showVirusTotalHashCard(activeHashResult)" class="vcard">
                   <div class="vcard-head">
                     <span class="vcard-title">🧪 VirusTotal</span>
                     <span v-if="vtNotFound" class="mb-notfound-badge">Not Found</span>
@@ -739,12 +896,12 @@ export default defineComponent({
                 </div>
 
                 <!-- MalwareBazaar -->
-                <div v-if="activeHashResult.malwarebazaar?.queryStatus" class="vcard">
+                <div v-if="showMalwareBazaarCard(activeHashResult.malwarebazaar)" class="vcard">
                   <div class="vcard-head">
                     <span class="vcard-title">🦠 MalwareBazaar</span>
                     <div class="flex items-center gap-2">
                       <span v-if="activeHashResult.malwarebazaar.queryStatus==='ok'" class="mb-found-badge">✓ Found</span>
-                      <span v-else class="mb-notfound-badge">Not Found</span>
+                      <span v-else class="mb-notfound-badge">{{ activeHashResult.malwarebazaar.queryStatus }}</span>
                     </div>
                   </div>
                   <div class="vcard-body">
@@ -777,10 +934,10 @@ export default defineComponent({
                 </div>
 
                 <!-- ThreatFox hash -->
-                <div v-if="activeHashResult.threatfox" class="vcard">
+                <div v-if="showThreatFoxCard(activeHashResult.threatfox)" class="vcard">
                   <div class="vcard-head">
                     <span class="vcard-title">🦊 ThreatFox</span>
-                    <span v-if="activeHashResult.threatfox.queryStatus==='ok'" class="mb-found-badge">✓ Found</span>
+                    <span v-if="hasThreatFoxHit(activeHashResult.threatfox)" class="mb-found-badge">✓ Found</span>
                     <span v-else class="mb-notfound-badge">{{ activeHashResult.threatfox.queryStatus||'No result' }}</span>
                   </div>
                   <div class="vcard-body">
@@ -807,7 +964,7 @@ export default defineComponent({
                     </template>
                     <div v-if="activeHashResult.threatfox.queryStatus!=='ok'" class="kv">
                       <span class="kv-val text-t3 italic" style="font-size:0.66rem">
-                        {{ activeHashResult.threatfox.queryStatus==='no_results'?'No ThreatFox intelligence for this hash.':activeHashResult.threatfox.queryStatus }}
+                        {{ activeHashResult.threatfox.queryStatus==='no_results' || activeHashResult.threatfox.queryStatus==='not_found' ? 'No ThreatFox intelligence for this hash.' : activeHashResult.threatfox.queryStatus }}
                       </span>
                     </div>
                   </div>
@@ -914,6 +1071,36 @@ export default defineComponent({
               <span :class="['risk-pill','risk-'+(activeDomainResult.riskLevel||'CLEAN')]">{{ activeDomainResult.riskLevel || 'CLEAN' }}</span>
               <span class="font-mono text-base text-t1">{{ activeDomainResult.domain }}</span>
             </div>
+            <div v-if="hasCacheHits(activeDomainResult)" class="flex items-center gap-2 mb-5 flex-wrap animate-fade-up">
+              <span class="text-[11px] uppercase tracking-[0.16em] text-t3">Cache Hit</span>
+              <span v-for="label in cacheHitLabels(activeDomainResult)" :key="'domain-cache-'+label"
+                    class="text-xs px-2 py-0.5 border rounded-pill text-prime border-prime/20 bg-prime/10">
+                {{ label }}
+              </span>
+              <span v-if="activeDomainResult.cached" class="text-xs px-2 py-0.5 border rounded-pill text-[#7ee0a0] border-[#7ee0a0]/20 bg-[#7ee0a0]/10">
+                All Cached
+              </span>
+            </div>
+            <details v-if="diagnosticEntries(activeDomainResult).length" class="diag-panel mb-5">
+              <summary class="diag-summary">
+                <span>Diagnostics</span>
+                <span class="diag-summary-meta">{{ diagnosticEntries(activeDomainResult).length }} sources</span>
+              </summary>
+              <div class="diag-grid">
+                <div v-for="entry in diagnosticEntries(activeDomainResult)" :key="'domain-diag-'+entry.key"
+                     class="diag-row">
+                  <div class="diag-source">
+                    <span class="diag-source-name">{{ entry.label }}</span>
+                    <span class="diag-source-key">{{ entry.key }}</span>
+                  </div>
+                  <div class="diag-badges">
+                    <span :class="diagnosticCacheClass(entry.cache)">{{ diagnosticCacheLabel(entry.cache) }}</span>
+                    <span :class="diagnosticStatusClass(entry.status)">{{ diagnosticStatusLabel(entry.status) }}</span>
+                    <span v-if="entry.error" class="diag-chip status-error max-w-[24rem] truncate" :title="entry.error">{{ entry.error }}</span>
+                  </div>
+                </div>
+              </div>
+            </details>
             <div class="grid gap-3 mb-4" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr))">
 
               <!-- VT Domain card -->
@@ -973,11 +1160,11 @@ export default defineComponent({
               </div>
 
               <!-- ThreatFox Domain card -->
-              <div v-if="activeDomainResult.threatfox && activeDomainResult.threatfox.queryStatus !== 'error'" class="vcard animate-fade-up-2">
+              <div v-if="showThreatFoxCard(activeDomainResult.threatfox)" class="vcard animate-fade-up-2">
                 <div class="vcard-head">
                   <span class="vcard-title">🦊 ThreatFox</span>
                   <div class="flex items-center gap-2">
-                    <span v-if="activeDomainResult.threatfox.queryStatus==='ok'" class="mb-found-badge">✓ Found</span>
+                    <span v-if="hasThreatFoxHit(activeDomainResult.threatfox)" class="mb-found-badge">✓ Found</span>
                     <span v-else class="mb-notfound-badge">{{ activeDomainResult.threatfox.queryStatus || 'No result' }}</span>
                     <a :href="'https://threatfox.abuse.ch/browse.php?search=ioc%3A'+activeDomainResult.domain"
                        target="_blank" rel="noopener" class="vcard-link">↗ ThreatFox</a>
@@ -1011,7 +1198,7 @@ export default defineComponent({
                   </template>
                   <div v-if="activeDomainResult.threatfox.queryStatus !== 'ok'" class="kv-row">
                     <span class="kv-val text-t3 italic text-xs">
-                      {{ activeDomainResult.threatfox.queryStatus==='no_results' ? 'No ThreatFox intelligence for this domain.' : activeDomainResult.threatfox.queryStatus }}
+                      {{ activeDomainResult.threatfox.queryStatus==='no_results' || activeDomainResult.threatfox.queryStatus==='not_found' ? 'No ThreatFox intelligence for this domain.' : activeDomainResult.threatfox.queryStatus }}
                     </span>
                   </div>
                 </div>

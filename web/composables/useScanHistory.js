@@ -11,7 +11,7 @@ export const scanHist = reactive([]);
 // addHist records or updates a scan entry. Duplicate IOCs update in-place
 // (risk refreshed, lastSeen updated, scanCount incremented) so the history
 // list stays at most 20 entries.
-// iocType: 'ip' | 'hash' — stored so reScan can route to the correct mode.
+// iocType: 'ip' | 'hash' | 'domain' — stored so reScan can route correctly.
 export function addHist(ioc, risk, iocType = 'ip') {
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const existing = scanHist.findIndex(h => h.ip === ioc);

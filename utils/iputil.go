@@ -46,12 +46,20 @@ type IPGeo struct {
 	Hostnames     []string `json:"hostnames,omitempty"`
 }
 
+type VendorDiagnostic struct {
+	Cache  string `json:"cache"`
+	Status string `json:"status"`
+	Error  string `json:"error,omitempty"`
+}
+
 // ComplexResult is the vendor-grouped, unified output of an IP lookup.
 type ComplexResult struct {
-	IPAddress string  `json:"ipAddress"`
-	RiskLevel string  `json:"riskLevel"`
-	Cached    bool    `json:"cached"`
-	Links     IPLinks `json:"links"`
+	IPAddress   string                      `json:"ipAddress"`
+	RiskLevel   string                      `json:"riskLevel"`
+	Cached      bool                        `json:"cached"`
+	CacheHits   map[string]bool             `json:"cacheHits,omitempty"`
+	Diagnostics map[string]VendorDiagnostic `json:"diagnostics,omitempty"`
+	Links       IPLinks                     `json:"links"`
 
 	Geo        IPGeo                     `json:"geo"`
 	VirusTotal integrations.IPVirusTotal `json:"virustotal"`

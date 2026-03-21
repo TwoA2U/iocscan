@@ -26,8 +26,13 @@ export const ipBulkCount  = ref(0);
 // ─── Derived ──────────────────────────────────────────────────────────────────
 
 export const activeResultEntry = computed(() => allResults.value[activeIdx.value] || null);
-export const activeResultIP    = computed(() => activeResultEntry.value?.ip || '');
-export const activeResult      = computed(() => activeResultEntry.value?.result || null);
+export const activeResult      = computed(() => activeResultEntry.value?.result || activeResultEntry.value || null);
+export const activeResultIP    = computed(() =>
+    activeResultEntry.value?.ip ||
+    activeResult.value?.ipAddress ||
+    activeResult.value?.ip ||
+    ''
+);
 
 export const networkRows = computed(() => {
     const d = activeResult.value;
@@ -83,8 +88,8 @@ export const visibleTableCols = computed(() => TABLE_COLS.filter(c => isColVisib
 
 export const sortedTableRows = computed(() => {
     const rows = allResults.value
-        .filter(e => e.result)
-        .map((e, i) => ({ ...e.result, _ip: e.ip, _idx: i }));
+        .map((e, i) => ({ ...(e.result || e), _ip: e.ip || e.ipAddress || e.ip, _idx: i }))
+        .filter(e => !!(e.ipAddress || e.ip || e._ip));
     const col = TABLE_COLS.find(c => c.key === tableSortCol.value);
     if (col) rows.sort((a, b) => {
         let va = col.get(a, a._idx), vb = col.get(b, b._idx);
@@ -166,7 +171,7 @@ export function copyJSON(activeResultVal) {
 
 export async function copyClipboard(format, copyMenuOpenRef) {
     copyMenuOpenRef.value = false;
-    const rows = allResults.value.filter(e => e.result).map(e => e.result);
+    const rows = allResults.value.map(e => e.result || e).filter(e => !!e);
     if (!rows.length) return;
     let text = '';
     if (format === 'json') {
@@ -193,7 +198,7 @@ export async function copyClipboard(format, copyMenuOpenRef) {
 }
 
 export function exportCSV() {
-    const rows = allResults.value.filter(e => e.result).map(e => e.result);
+    const rows = allResults.value.map(e => e.result || e).filter(e => !!e);
     if (!rows.length) return;
     const cols   = TABLE_COLS.filter(c => c.key !== '#' && isColVisible(c));
     const header = cols.map(c => c.label).join(',');
@@ -217,10 +222,12 @@ export function exportJSON() {
 
 function _buildFilteredRows() {
     const cols = TABLE_COLS.filter(c => c.key !== '#' && isColVisible(c));
-    return allResults.value.filter(e => e.result).map((e, i) => {
+    return allResults.value.map((e, i) => ({ row: e.result || e, idx: i }))
+        .filter(({ row }) => !!row)
+        .map(({ row, idx }) => {
         const obj = {};
         cols.forEach(c => {
-            let v = c.get(e.result, i);
+            let v = c.get(row, idx);
             if (v === '—') v = null;
             if (typeof v === 'boolean') v = v ? true : false;
             if (Array.isArray(v)) v = v.join('; ');

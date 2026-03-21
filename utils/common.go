@@ -2,16 +2,16 @@
 package utils
 
 import (
-	"github.com/TwoA2U/iocscan/integrations"
 	"database/sql"
 	"fmt"
+	"github.com/TwoA2U/iocscan/integrations"
+	"gopkg.in/yaml.v3"
+	_ "modernc.org/sqlite"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
-	_ "modernc.org/sqlite"
-	"gopkg.in/yaml.v3"
 )
 
 // ── API key collection ────────────────────────────────────────────────────────
@@ -122,6 +122,7 @@ var (
 var allowedTables = map[string]bool{
 	"VT_IP": true, "ABUSE_IP": true, "IPAPIIS_IP": true, "GN_IP": true,
 	"VT_HASH": true, "MB_HASH": true, "TF_IP": true, "TF_HASH": true,
+	"VT_DOMAIN": true, "TF_DOMAIN": true,
 }
 
 var sqliteTimeFormats = []string{
@@ -199,6 +200,8 @@ func InitDB() {
 		CREATE TABLE IF NOT EXISTS TF_IP      (KEY TEXT PRIMARY KEY NOT NULL, DATA TEXT NOT NULL, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
 		CREATE TABLE IF NOT EXISTS TF_HASH    (KEY TEXT PRIMARY KEY NOT NULL, DATA TEXT NOT NULL, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
 		CREATE TABLE IF NOT EXISTS GN_IP      (KEY TEXT PRIMARY KEY NOT NULL, DATA TEXT NOT NULL, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+		CREATE TABLE IF NOT EXISTS VT_DOMAIN  (KEY TEXT PRIMARY KEY NOT NULL, DATA TEXT NOT NULL, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+		CREATE TABLE IF NOT EXISTS TF_DOMAIN  (KEY TEXT PRIMARY KEY NOT NULL, DATA TEXT NOT NULL, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
 		CREATE INDEX IF NOT EXISTS idx_vt_ip_created    ON VT_IP(CREATED_AT);
 		CREATE INDEX IF NOT EXISTS idx_abuse_ip_created ON ABUSE_IP(CREATED_AT);
 		CREATE INDEX IF NOT EXISTS idx_ipapiis_created  ON IPAPIIS_IP(CREATED_AT);
@@ -207,6 +210,8 @@ func InitDB() {
 		CREATE INDEX IF NOT EXISTS idx_tf_ip_created    ON TF_IP(CREATED_AT);
 		CREATE INDEX IF NOT EXISTS idx_tf_hash_created  ON TF_HASH(CREATED_AT);
 		CREATE INDEX IF NOT EXISTS idx_gn_ip_created    ON GN_IP(CREATED_AT);
+		CREATE INDEX IF NOT EXISTS idx_vt_domain_created ON VT_DOMAIN(CREATED_AT);
+		CREATE INDEX IF NOT EXISTS idx_tf_domain_created ON TF_DOMAIN(CREATED_AT);
 	`)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "InitDB cache tables: %v\n", err)
@@ -308,8 +313,8 @@ func putCacheEntry(key, data, table string) {
 	db.Exec(q, key, data)
 }
 
-// ClearHashCaches deletes all rows from the specified cache tables.
-func ClearHashCaches(tables []string) int {
+// ClearCaches deletes all rows from the specified cache tables.
+func ClearCaches(tables []string) int {
 	db, err := getSharedDB()
 	if err != nil {
 		return 0
@@ -326,4 +331,9 @@ func ClearHashCaches(tables []string) int {
 		}
 	}
 	return total
+}
+
+// ClearHashCaches is kept as a compatibility wrapper for older call sites.
+func ClearHashCaches(tables []string) int {
+	return ClearCaches(tables)
 }

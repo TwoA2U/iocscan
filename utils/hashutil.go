@@ -23,11 +23,13 @@ type HashLinks struct {
 // HashResult is the vendor-grouped, unified output of a hash lookup.
 // Vendor-specific sub-structs are defined in their respective integrations/ files.
 type HashResult struct {
-	Hash      string    `json:"hash"`
-	HashType  string    `json:"hashType"`
-	RiskLevel string    `json:"riskLevel"`
-	Cached    bool      `json:"cached"`
-	Links     HashLinks `json:"links"`
+	Hash        string                      `json:"hash"`
+	HashType    string                      `json:"hashType"`
+	RiskLevel   string                      `json:"riskLevel"`
+	Cached      bool                        `json:"cached"`
+	CacheHits   map[string]bool             `json:"cacheHits,omitempty"`
+	Diagnostics map[string]VendorDiagnostic `json:"diagnostics,omitempty"`
+	Links       HashLinks                   `json:"links"`
 
 	VirusTotal    integrations.HashVirusTotal    `json:"virustotal"`
 	MalwareBazaar integrations.HashMalwareBazaar `json:"malwarebazaar"`
