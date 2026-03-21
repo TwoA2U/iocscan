@@ -99,6 +99,15 @@ type TFHashResult struct {
 	IOCs        []TFHashEntry `json:"iocs,omitempty"`
 }
 
+func normalizeTFQueryStatus(status string) string {
+	switch status {
+	case "no_result":
+		return "no_results"
+	default:
+		return status
+	}
+}
+
 // ── HTTP helper ───────────────────────────────────────────────────────────────
 
 // doTFPost sends a JSON POST to ThreatFox and returns the raw response body.
@@ -153,6 +162,7 @@ func FetchTFIP(ctx context.Context, ip, apiKey string) (*TFIPResult, error) {
 	if err := json.Unmarshal(raw, &resp); err != nil {
 		return &TFIPResult{QueryStatus: "parse_error"}, fmt.Errorf("FetchTFIP parse: %w", err)
 	}
+	resp.QueryStatus = normalizeTFQueryStatus(resp.QueryStatus)
 	if resp.QueryStatus != "ok" {
 		return &TFIPResult{QueryStatus: resp.QueryStatus}, nil
 	}
@@ -215,6 +225,7 @@ func FetchTFHash(ctx context.Context, hash, apiKey string) (*TFHashResult, error
 	if err := json.Unmarshal(raw, &resp); err != nil {
 		return &TFHashResult{QueryStatus: "parse_error"}, fmt.Errorf("FetchTFHash parse: %w", err)
 	}
+	resp.QueryStatus = normalizeTFQueryStatus(resp.QueryStatus)
 	if resp.QueryStatus != "ok" {
 		return &TFHashResult{QueryStatus: resp.QueryStatus}, nil
 	}
@@ -299,6 +310,7 @@ func (t ThreatFoxIPIntegration) Manifest() Manifest {
 					Type:  FieldTypeBadge,
 					Colors: map[string]string{
 						"ok":          "#f87171",
+						"no_result":   "#34d399",
 						"no_results":  "#34d399",
 						"error":       "#fb923c",
 						"parse_error": "#fb923c",
@@ -410,6 +422,7 @@ func (t ThreatFoxHashIntegration) Manifest() Manifest {
 					Type:  FieldTypeBadge,
 					Colors: map[string]string{
 						"ok":          "#f87171",
+						"no_result":   "#34d399",
 						"no_results":  "#34d399",
 						"error":       "#fb923c",
 						"parse_error": "#fb923c",

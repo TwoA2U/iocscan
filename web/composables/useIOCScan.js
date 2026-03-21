@@ -122,6 +122,7 @@ export const hashResultLinks   = HashResults.hashResultLinks;
 export const signerDetailObj   = HashResults.signerDetailObj;
 export const signerIsRevoked   = HashResults.signerIsRevoked;
 export const signerIsInvalid   = HashResults.signerIsInvalid;
+export const signerIsValid     = HashResults.signerIsValid;
 export const vtNotFound        = HashResults.vtNotFound;
 export const highlightedHashJSON   = HashResults.highlightedHashJSON;
 export const visibleHashTableCols  = HashResults.visibleHashTableCols;

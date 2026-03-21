@@ -47,7 +47,17 @@ export const signerIsRevoked = computed(() => {
 
 export const signerIsInvalid = computed(() => {
     const s = signerDetailObj.value?.status || '';
-    return s.length > 0 && !signerIsRevoked.value;
+    if (!s) return false;
+    if (signerIsRevoked.value) return false;
+    if (/valid/i.test(s) && !/invalid/i.test(s)) return false;
+    return /(invalid|expired|untrusted|mismatch|error|fail)/i.test(s);
+});
+
+export const signerIsValid = computed(() => {
+    const s = signerDetailObj.value?.status || '';
+    if (!s) return false;
+    if (signerIsRevoked.value || signerIsInvalid.value) return false;
+    return /valid/i.test(s);
 });
 
 export const vtNotFound = computed(() => {

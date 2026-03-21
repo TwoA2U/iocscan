@@ -32,7 +32,7 @@ import {
     colBadge,
     activeResultEntry, activeResultIP, activeResult,
     activeHashEntry, activeHashResult,
-    hashResultLinks, signerDetailObj, signerIsRevoked, signerIsInvalid, vtNotFound,
+    hashResultLinks, signerDetailObj, signerIsRevoked, signerIsInvalid, signerIsValid, vtNotFound,
     networkRows, highlightedJSON, highlightedHashJSON,
     visibleTableCols, sortedTableRows,
     visibleHashTableCols, sortedHashRows,
@@ -120,6 +120,7 @@ export default defineComponent({
             switch (status) {
             case 'ok': return 'Hit';
             case 'not_found': return 'No Hit';
+            case 'no_result': return 'No Hit';
             case 'no_results': return 'No Hit';
             case 'not_observed': return 'No Hit';
             case 'no_api_key': return 'No API Key';
@@ -133,6 +134,7 @@ export default defineComponent({
             switch (status) {
             case 'ok': return 'diag-chip status-ok';
             case 'not_found':
+            case 'no_result':
             case 'no_results':
             case 'not_observed': return 'diag-chip status-miss';
             case 'no_api_key': return 'diag-chip status-muted';
@@ -145,6 +147,10 @@ export default defineComponent({
         function hasThreatFoxHit(tf) {
             if (!tf) return false;
             return tf.queryStatus === 'ok';
+        }
+
+        function isThreatFoxMissStatus(status) {
+            return status === 'no_result' || status === 'no_results' || status === 'not_found';
         }
 
         function showThreatFoxCard(tf) {
@@ -185,7 +191,7 @@ export default defineComponent({
             colBadge,
             activeResultEntry, activeResultIP, activeResult,
             activeHashEntry, activeHashResult,
-            hashResultLinks, signerDetailObj, signerIsRevoked, signerIsInvalid, vtNotFound,
+            hashResultLinks, signerDetailObj, signerIsRevoked, signerIsInvalid, signerIsValid, vtNotFound,
             networkRows, highlightedJSON, highlightedHashJSON,
             visibleTableCols, sortedTableRows,
             visibleHashTableCols, sortedHashRows,
@@ -197,7 +203,7 @@ export default defineComponent({
             goToSettings, goToAdmin, logoutNow,
             cacheHitLabels, hasCacheHits, diagnosticEntries,
             diagnosticCacheLabel, diagnosticCacheClass, diagnosticStatusLabel, diagnosticStatusClass,
-            hasThreatFoxHit, showThreatFoxCard, showMalwareBazaarCard, showVirusTotalHashCard, showGreyNoiseCard,
+            hasThreatFoxHit, isThreatFoxMissStatus, showThreatFoxCard, showMalwareBazaarCard, showVirusTotalHashCard, showGreyNoiseCard,
             doIPScan, doHashScanAction,
             handleIPFileUpload, handleIPDrop, clearIPBulk,
             handleHashFileUpload, clearHashBulk,
@@ -594,7 +600,7 @@ export default defineComponent({
                   </template>
                   <div v-if="activeResult.threatfox.queryStatus!=='ok'" class="kv">
                     <span class="kv-val text-t3 italic" style="font-size:0.66rem">
-                      {{ activeResult.threatfox.queryStatus==='no_results' || activeResult.threatfox.queryStatus==='not_found' ? 'No ThreatFox intelligence for this IP.' : activeResult.threatfox.queryStatus }}
+                      {{ isThreatFoxMissStatus(activeResult.threatfox.queryStatus) ? 'No ThreatFox intelligence for this IP.' : activeResult.threatfox.queryStatus }}
                     </span>
                   </div>
                 </div>
@@ -820,17 +826,20 @@ export default defineComponent({
                       <span class="hash-kv-key">Signer</span>
                       <span class="hash-kv-val">{{ toArr(activeHashResult.virustotal.signatureSigners).join(', ') }}</span>
                     </div>
-                    <div v-if="activeHashResult.virustotal && toArr(activeHashResult.virustotal.signatureSigners).length" class="mx-3 mb-2 codesign-box">
-                      <div class="codesign-revoked">
-                        ⚠ Code Signed
+                    <div v-if="activeHashResult.virustotal && toArr(activeHashResult.virustotal.signatureSigners).length"
+                         class="mx-3 mb-2 codesign-box"
+                         :class="{'codesign-box-valid': signerIsValid, 'codesign-box-warn': signerIsInvalid, 'codesign-box-danger': signerIsRevoked}">
+                      <div class="codesign-revoked" :class="{'codesign-head-valid': signerIsValid, 'codesign-head-warn': signerIsInvalid}">
+                        Code Signed
                         <span v-if="signerIsRevoked" class="revoked-badge">REVOKED</span>
+                        <span v-else-if="signerIsValid" class="valid-badge">VALID</span>
                         <span v-else-if="signerIsInvalid" class="invalid-badge">INVALID</span>
                       </div>
                       <template v-if="signerDetailObj">
                         <div class="codesign-row"><span class="codesign-lbl">Issuer</span><span class="codesign-val">{{ signerDetailObj.certIssuer }}</span></div>
                         <div class="codesign-row"><span class="codesign-lbl">Entity</span><span class="codesign-val">{{ signerDetailObj.name }}</span></div>
                         <div v-if="signerDetailObj.validFrom" class="codesign-row"><span class="codesign-lbl">Valid</span><span class="codesign-val">{{ signerDetailObj.validFrom }} → {{ signerDetailObj.validTo }}</span></div>
-                        <div class="codesign-status">{{ signerDetailObj.status }}</div>
+                        <div class="codesign-status" :class="{'codesign-status-valid': signerIsValid, 'codesign-status-warn': signerIsInvalid}">{{ signerDetailObj.status }}</div>
                       </template>
                     </div>
                   </div>
@@ -964,7 +973,7 @@ export default defineComponent({
                     </template>
                     <div v-if="activeHashResult.threatfox.queryStatus!=='ok'" class="kv">
                       <span class="kv-val text-t3 italic" style="font-size:0.66rem">
-                        {{ activeHashResult.threatfox.queryStatus==='no_results' || activeHashResult.threatfox.queryStatus==='not_found' ? 'No ThreatFox intelligence for this hash.' : activeHashResult.threatfox.queryStatus }}
+                        {{ isThreatFoxMissStatus(activeHashResult.threatfox.queryStatus) ? 'No ThreatFox intelligence for this hash.' : activeHashResult.threatfox.queryStatus }}
                       </span>
                     </div>
                   </div>
@@ -1198,7 +1207,7 @@ export default defineComponent({
                   </template>
                   <div v-if="activeDomainResult.threatfox.queryStatus !== 'ok'" class="kv-row">
                     <span class="kv-val text-t3 italic text-xs">
-                      {{ activeDomainResult.threatfox.queryStatus==='no_results' || activeDomainResult.threatfox.queryStatus==='not_found' ? 'No ThreatFox intelligence for this domain.' : activeDomainResult.threatfox.queryStatus }}
+                      {{ isThreatFoxMissStatus(activeDomainResult.threatfox.queryStatus) ? 'No ThreatFox intelligence for this domain.' : activeDomainResult.threatfox.queryStatus }}
                     </span>
                   </div>
                 </div>

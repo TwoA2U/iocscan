@@ -253,7 +253,7 @@ export default defineComponent({
                 <input v-model="keyForm.ipapiKey" class="key-input" :placeholder="loadingKeys ? 'Loading…' : (maskedKeys.ipapiKey || 'Not set')">
               </div>
               <div>
-                <label class="block text-xs font-semibold tracking-wider uppercase text-t3 mb-1.5">abuse.ch</label>
+                <label class="block text-xs font-semibold tracking-wider uppercase text-t3 mb-1.5">abuse.ch (ThreatFox / MalwareBazaar)</label>
                 <input v-model="keyForm.abusechKey" class="key-input" :placeholder="loadingKeys ? 'Loading…' : (maskedKeys.abusechKey || 'Not set')">
               </div>
               <div>

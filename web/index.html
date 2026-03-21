@@ -875,11 +875,18 @@
     .hash-kv-val { font-family:'JetBrains Mono',monospace;font-size:0.68rem;color:#f0f1f5;text-align:right;word-break:break-word;max-width:65%; }
 
     .codesign-box { background:rgba(252,129,129,0.05);border:1px solid rgba(252,129,129,0.2);border-left:2px solid var(--r0);padding:9px 11px;margin-top:9px;border-radius:6px; }
+    .codesign-box-valid { background:rgba(52,211,153,0.06);border-color:rgba(52,211,153,0.22);border-left-color:var(--r4); }
+    .codesign-box-warn { background:rgba(252,211,77,0.06);border-color:rgba(252,211,77,0.22);border-left-color:var(--r2); }
+    .codesign-box-danger { background:rgba(252,129,129,0.05);border-color:rgba(252,129,129,0.2);border-left-color:var(--r0); }
     .codesign-revoked { font-size:0.6rem;font-weight:700;letter-spacing:0.06em;color:var(--r0);margin-top:4px;display:flex;align-items:center;gap:5px; }
+    .codesign-head-valid { color:var(--r4); }
+    .codesign-head-warn { color:var(--r2); }
     .codesign-row { display:flex;gap:7px;margin-top:4px; }
     .codesign-lbl { font-size:0.56rem;font-weight:700;letter-spacing:0.08em;color:rgba(252,129,129,0.55);text-transform:uppercase;min-width:40px;flex-shrink:0; }
     .codesign-val { font-size:0.6rem;color:var(--r0);font-family:'JetBrains Mono',monospace;word-break:break-word; }
     .codesign-status { font-size:0.58rem;color:var(--r0);border-top:1px solid rgba(252,129,129,0.15);padding-top:5px;margin-top:3px;line-height:1.5; }
+    .codesign-status-valid { color:var(--r4);border-top-color:rgba(52,211,153,0.18); }
+    .codesign-status-warn { color:var(--r2);border-top-color:rgba(252,211,77,0.18); }
 
     .sigma-block { background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.08);padding:7px 9px;margin-top:5px;border-radius:6px; }
     .sigma-ruleset { font-size:0.56rem;color:#565e6e;font-family:'JetBrains Mono',monospace;margin-bottom:4px; }
@@ -939,6 +946,7 @@
     .hash-source-link:hover { color:var(--c);border-color:rgba(129,140,248,0.4); }
     .hash-source-link-na { font-size:0.54rem;font-weight:600;letter-spacing:0.06em;color:#374151;border:1px solid rgba(255,255,255,0.06);padding:2px 8px;text-transform:uppercase;opacity:0.5;cursor:default;border-radius:999px; }
     .revoked-badge { font-size:0.52rem;font-weight:700;letter-spacing:0.1em;padding:1px 7px;background:var(--r0a);border:1px solid rgba(252,129,129,0.35);color:var(--r0);text-transform:uppercase;border-radius:3px; }
+    .valid-badge { font-size:0.52rem;font-weight:700;letter-spacing:0.1em;padding:1px 7px;background:rgba(52,211,153,0.12);border:1px solid rgba(52,211,153,0.35);color:var(--r4);text-transform:uppercase;border-radius:3px; }
     .invalid-badge { font-size:0.52rem;font-weight:700;letter-spacing:0.1em;padding:1px 7px;background:var(--r2a);border:1px solid rgba(252,211,77,0.35);color:var(--r2);text-transform:uppercase;border-radius:3px; }
     .mb-found-badge    { display:inline-flex;align-items:center;gap:4px;font-size:0.56rem;font-weight:700;padding:2px 8px;border-radius:999px;color:var(--r4);border:1px solid rgba(74,222,128,0.3);background:var(--r4a); }
     .mb-notfound-badge { display:inline-flex;align-items:center;gap:4px;font-size:0.56rem;font-weight:700;padding:2px 8px;border-radius:999px;color:#565e6e;border:1px solid rgba(255,255,255,0.10); }
