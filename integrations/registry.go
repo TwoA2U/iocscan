@@ -94,8 +94,8 @@ func Manifests() []Manifest {
 
 // CacheTables returns the unique, non-empty cache table names declared by
 // all registered integrations. Used by InitDB() to create tables and by
-// allowedTables to build the SQL injection whitelist — both dynamically,
-// so neither needs updating when a new integration is added.
+// cache-table validation helpers to constrain dynamic SQL safely, so no
+// hardcoded table list needs updating when a new integration is added.
 func CacheTables() []string {
 	all := All()
 	seen := make(map[string]bool, len(all))

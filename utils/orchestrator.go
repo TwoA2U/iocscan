@@ -5,10 +5,6 @@
 // collects partial results, evaluates risk across all manifests, and returns
 // a single ScanResult.
 //
-// iputil.go and hashutil.go become thin compatibility shims: they call Scan()
-// and re-shape the output into the existing ComplexResult / HashResult JSON
-// shapes so the /api/scan and /api/scan/hash response format is unchanged.
-//
 // Public API:
 //   Scan(ctx, ioc, iocType, keys, useCache) (*ScanResult, error)
 //   BuildKeys(vtKey, abuseKey, ipapiKey, abusechKey string) map[string]string
@@ -33,8 +29,8 @@ import (
 //	abuseFields := result.Results["abuseipdb"]
 //	vtFields    := result.Results["virustotal_ip"]
 //
-// This replaces the per-vendor typed fields in ComplexResult / HashResult
-// with a generic map that extends automatically when new integrations are added.
+// This replaces fixed per-vendor response structs with a generic map that
+// extends automatically when new integrations are added.
 type ScanResult struct {
 	IOC       string `json:"ioc"`
 	IOCType   string `json:"iocType"`

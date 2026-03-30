@@ -1,8 +1,8 @@
 package utils
 
 // buildVendorDiagnostics summarizes per-integration cache and status outcomes
-// from a ScanResult so the legacy API responses can expose lightweight
-// diagnostics without leaking the full orchestrator shape.
+// from a ScanResult so callers can expose lightweight diagnostics without
+// leaking the full orchestrator shape.
 func buildVendorDiagnostics(sr *ScanResult) map[string]VendorDiagnostic {
 	if sr == nil {
 		return nil
@@ -39,7 +39,7 @@ func buildVendorDiagnostics(sr *ScanResult) map[string]VendorDiagnostic {
 		}
 
 		if fields, ok := sr.Results[name]; ok {
-			if status := strField(fields, "queryStatus"); status != "" {
+			if status := diagStrField(fields, "queryStatus"); status != "" {
 				diag.Status = status
 			} else {
 				diag.Status = "ok"
@@ -53,4 +53,13 @@ func buildVendorDiagnostics(sr *ScanResult) map[string]VendorDiagnostic {
 	}
 
 	return out
+}
+
+func diagStrField(f map[string]any, key string) string {
+	if v, ok := f[key]; ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
 }

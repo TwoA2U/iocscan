@@ -271,7 +271,7 @@ type CacheConfig struct {
 //
 // Manifest self-configures the entire system:
 //
-//	Cache      → InitDB() creates Cache.Table; allowedTables whitelists it
+//	Cache      → InitDB() creates Cache.Table; cache validation is manifest-derived
 //	API        → /api/integrations serializes all manifests as JSON to the frontend
 //	Cards      → IntegrationCard.js renders Card.Fields dynamically
 //	Table cols → useIntegrations.js builds column definitions from TableColumns
@@ -306,7 +306,7 @@ type Manifest struct {
 // so IntegrationCard.js can render them generically without hardcoded names.
 //
 // Key naming convention: camelCase matching existing JSON field names where
-// possible to ease the migration from ComplexResult/HashResult.
+// possible to ease migration from older hardcoded frontend response shapes.
 // e.g. "confidenceScore", "malicious", "queryStatus", "tags"
 type Result struct {
 	// Fields holds all vendor data extracted for this IOC.
@@ -340,7 +340,7 @@ type Result struct {
 //  4. Implement Run()                call vendor API, return &Result{Fields: ...}
 //  5. Register in registry.go        add &GreyNoise{} to All() slice
 //
-// That is the complete process. InitDB(), allowedTables, /api/integrations,
+// That is the complete process. InitDB(), cache validation, /api/integrations,
 // card rendering, table columns, risk scoring, and ScanSettings all
 // self-configure from the Manifest. No other files need to change.
 type Integration interface {

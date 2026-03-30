@@ -8,11 +8,8 @@
 //	GET  /                   → HTML single-page app (and all web/ static assets)
 //	GET  /api/health         → health check
 //	GET  /api/integrations   → integration manifests
-//	POST /api/scan           → Legacy IP enrichment response
 //	POST /api/scan/generic   → Generic IP ScanResult response
-//	POST /api/scan/hash      → Legacy hash enrichment response
 //	POST /api/scan/hash/generic → Generic hash ScanResult response
-//	POST /api/scan/ioc       → Legacy mixed IOC enrichment response
 //	POST /api/scan/ioc/generic → Generic mixed IOC ScanResult response
 //	POST /api/cache/clear    → Cache management
 //
@@ -101,11 +98,8 @@ func Start(port int, cfgFile string, ui fs.FS, db *sql.DB, encKey []byte) {
 		r.Use(auth.RequireAuth(db, globalSM))
 
 		// Scan endpoints
-		r.Post("/api/scan", rateLimit(serveScan))
 		r.Post("/api/scan/generic", rateLimit(serveGenericIPScan))
-		r.Post("/api/scan/hash", rateLimit(serveHashScan))
 		r.Post("/api/scan/hash/generic", rateLimit(serveGenericHashScan))
-		r.Post("/api/scan/ioc", rateLimit(serveIOCScan))
 		r.Post("/api/scan/ioc/generic", rateLimit(serveGenericIOCScan))
 		r.Post("/api/cache/clear", serveCacheClear)
 
@@ -323,18 +317,6 @@ func legacyKeysEmpty(cfg *utils.CollectionAPI) bool {
 		cfg.GreyNoiseAPI == ""
 }
 
-// ── Scan request types ────────────────────────────────────────────────────────
-
-type scanRequest struct {
-	IP           string `json:"ip"`
-	VTKey        string `json:"vt_key"`
-	AbuseKey     string `json:"abuse_key"`
-	IPApiKey     string `json:"ipapi_key"`
-	AbuseCHKey   string `json:"abusech_key"`
-	GreyNoiseKey string `json:"greynoise_key"`
-	UseCache     bool   `json:"use_cache"`
-}
-
 type genericScanEntry struct {
 	IOC    string            `json:"ioc"`
 	Type   string            `json:"type"`
@@ -389,53 +371,6 @@ func serveGenericIPScan(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, results)
 }
 
-func serveScan(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
-
-	var req scanRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid JSON body", http.StatusBadRequest)
-		return
-	}
-	if req.IP == "" {
-		jsonError(w, `"ip" field is required`, http.StatusBadRequest)
-		return
-	}
-
-	keys := loadKeys(r)
-
-	ips, err := utils.CheckIP(req.IP)
-	if err != nil {
-		jsonError(w, fmt.Sprintf("invalid IP: %v", err), http.StatusBadRequest)
-		return
-	}
-
-	processor := utils.NewIPProcessor(keys.VTKey, keys.AbuseKey, keys.IPApiKey, keys.AbuseCHKey, keys.GreyNoiseKey)
-
-	type entry struct {
-		IP     string          `json:"ip"`
-		Result json.RawMessage `json:"result,omitempty"`
-		Error  string          `json:"error,omitempty"`
-	}
-
-	results := make([]entry, len(ips))
-	for i, ip := range ips {
-		results[i] = entry{IP: ip}
-	}
-
-	ctx := r.Context()
-	runChunked(ctx, len(ips), 10, 300*time.Millisecond, func(i int) {
-		raw, err := processor.Lookup(ctx, ips[i], req.UseCache)
-		if err != nil {
-			results[i].Error = err.Error()
-			return
-		}
-		results[i].Result = json.RawMessage(raw)
-	})
-
-	writeJSON(w, results)
-}
-
 func serveGenericHashScan(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 
@@ -476,53 +411,6 @@ func serveGenericHashScan(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		results[i].Result = sr
-	})
-
-	writeJSON(w, results)
-}
-
-func serveHashScan(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
-
-	var req struct {
-		Hashes     []string `json:"hashes"`
-		VTKey      string   `json:"vt_key"`
-		AbuseCHKey string   `json:"abusech_key"`
-		UseCache   bool     `json:"use_cache"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid JSON body", http.StatusBadRequest)
-		return
-	}
-	if len(req.Hashes) == 0 {
-		jsonError(w, `"hashes" field is required`, http.StatusBadRequest)
-		return
-	}
-	if len(req.Hashes) > 100 {
-		req.Hashes = req.Hashes[:100]
-	}
-
-	keys := loadKeys(r)
-
-	type entry struct {
-		Hash   string          `json:"hash"`
-		Result json.RawMessage `json:"result,omitempty"`
-		Error  string          `json:"error,omitempty"`
-	}
-
-	results := make([]entry, len(req.Hashes))
-	for i, h := range req.Hashes {
-		results[i] = entry{Hash: h}
-	}
-
-	ctx := r.Context()
-	runChunked(ctx, len(req.Hashes), 5, 500*time.Millisecond, func(i int) {
-		raw, err := utils.LookupHash(ctx, req.Hashes[i], keys.VTKey, keys.AbuseCHKey, req.UseCache)
-		if err != nil {
-			results[i].Error = err.Error()
-			return
-		}
-		results[i].Result = json.RawMessage(raw)
 	})
 
 	writeJSON(w, results)
@@ -592,107 +480,6 @@ func serveGenericIOCScan(w http.ResponseWriter, r *http.Request) {
 	go runGenericBatch(ipIdxs, 10, 300*time.Millisecond, integrations.IOCTypeIP)
 	go runGenericBatch(hashIdxs, 5, 500*time.Millisecond, integrations.IOCTypeHash)
 	go runGenericBatch(domainIdxs, 5, 500*time.Millisecond, integrations.IOCTypeDomain)
-
-	pipelineWg.Wait()
-	writeJSON(w, results)
-}
-
-func serveIOCScan(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
-
-	var req struct {
-		IOCs         []string `json:"iocs"`
-		VTKey        string   `json:"vt_key"`
-		AbuseKey     string   `json:"abuse_key"`
-		IPApiKey     string   `json:"ipapi_key"`
-		AbuseCHKey   string   `json:"abusech_key"`
-		GreyNoiseKey string   `json:"greynoise_key"`
-		UseCache     bool     `json:"use_cache"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid JSON body", http.StatusBadRequest)
-		return
-	}
-	if len(req.IOCs) == 0 {
-		jsonError(w, `"iocs" field is required`, http.StatusBadRequest)
-		return
-	}
-	if len(req.IOCs) > 100 {
-		req.IOCs = req.IOCs[:100]
-	}
-
-	keys := loadKeys(r)
-
-	type iocEntry struct {
-		IOC    string          `json:"ioc"`
-		Type   string          `json:"type"`
-		Result json.RawMessage `json:"result,omitempty"`
-		Error  string          `json:"error,omitempty"`
-	}
-
-	results := make([]iocEntry, len(req.IOCs))
-	for i, ioc := range req.IOCs {
-		results[i] = iocEntry{IOC: ioc, Type: string(utils.DetectIOCType(ioc))}
-	}
-
-	ctx := r.Context()
-	processor := utils.NewIPProcessor(keys.VTKey, keys.AbuseKey, keys.IPApiKey, keys.AbuseCHKey, keys.GreyNoiseKey)
-
-	var ipIdxs, hashIdxs, domainIdxs []int
-	for i, e := range results {
-		switch e.Type {
-		case string(utils.TypeIP):
-			ipIdxs = append(ipIdxs, i)
-		case string(utils.TypeHash):
-			hashIdxs = append(hashIdxs, i)
-		case string(utils.TypeDomain):
-			domainIdxs = append(domainIdxs, i)
-		default:
-			results[i].Error = fmt.Sprintf("%s scanning not yet supported", e.Type)
-		}
-	}
-
-	var pipelineWg sync.WaitGroup
-	pipelineWg.Add(3)
-
-	go func() {
-		defer pipelineWg.Done()
-		runChunked(ctx, len(ipIdxs), 10, 300*time.Millisecond, func(i int) {
-			idx := ipIdxs[i]
-			raw, err := processor.Lookup(ctx, results[idx].IOC, req.UseCache)
-			if err != nil {
-				results[idx].Error = err.Error()
-				return
-			}
-			results[idx].Result = json.RawMessage(raw)
-		})
-	}()
-
-	go func() {
-		defer pipelineWg.Done()
-		runChunked(ctx, len(hashIdxs), 5, 500*time.Millisecond, func(i int) {
-			idx := hashIdxs[i]
-			raw, err := utils.LookupHash(ctx, results[idx].IOC, keys.VTKey, keys.AbuseCHKey, req.UseCache)
-			if err != nil {
-				results[idx].Error = err.Error()
-				return
-			}
-			results[idx].Result = json.RawMessage(raw)
-		})
-	}()
-
-	go func() {
-		defer pipelineWg.Done()
-		runChunked(ctx, len(domainIdxs), 5, 500*time.Millisecond, func(i int) {
-			idx := domainIdxs[i]
-			raw, err := utils.LookupDomain(ctx, results[idx].IOC, keys.VTKey, keys.AbuseCHKey, req.UseCache)
-			if err != nil {
-				results[idx].Error = err.Error()
-				return
-			}
-			results[idx].Result = json.RawMessage(raw)
-		})
-	}()
 
 	pipelineWg.Wait()
 	writeJSON(w, results)

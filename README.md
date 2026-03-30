@@ -28,6 +28,7 @@ Query indicators against VirusTotal, AbuseIPDB, ThreatFox, ipapi.is, MalwareBaza
 - [Known Limitations](#known-limitations)
 - [Development](#development)
 - [Contributing](#contributing)
+- [Changelog](#changelog)
 - [License](#license)
 
 ---
@@ -242,41 +243,6 @@ Generic mixed/domain enrichment response. The current web UI uses this for domai
 }
 ```
 
-### Legacy compatibility endpoints
-
-### `POST /api/scan`
-
-Legacy typed IP enrichment response. In normal web UI use, vendor API keys are loaded from the authenticated user's saved settings rather than sent in the request body.
-
-```json
-{
-  "ip": "1.2.3.4",
-  "use_cache": true
-}
-```
-
-### `POST /api/scan/hash`
-
-Legacy typed hash enrichment response. Accepts up to 100 hashes (MD5, SHA1, or SHA256).
-
-```json
-{
-  "hashes": ["<hash1>", "<hash2>"],
-  "use_cache": true
-}
-```
-
-### `POST /api/scan/ioc`
-
-Legacy typed mixed IOC enrichment response. IPs, hashes, and domains are auto-detected and routed to the correct pipeline.
-
-```json
-{
-  "iocs": ["1.2.3.4", "<sha256>", "evil.com"],
-  "use_cache": true
-}
-```
-
 ### `POST /api/cache/clear`
 
 ```json
@@ -438,13 +404,9 @@ iocscan/
 │   └── httpclient/http.go         — shared HTTP client with context support
 ├── utils/
 │   ├── common.go                  — dynamic InitDB(), cache helpers
-│   ├── diagnostics.go             — per-vendor cache/status diagnostics for legacy responses
+│   ├── diagnostics.go             — per-vendor cache/status diagnostics helpers
 │   ├── orchestrator.go            — generic Scan() fan-out, ScanResult, BuildKeys()
-│   ├── iputil.go                  — IP output types, IPProcessor, GNResult
-│   ├── iputil_shim.go             — Lookup() -> Scan() -> ComplexResult
-│   ├── hashutil.go                — hash output types and helpers
-│   ├── hashutil_shim.go           — LookupHash() -> Scan() -> HashResult
-│   ├── domainutil.go              — LookupDomain() -> Scan() -> DomainResult
+│   ├── iputil.go                  — IP validation + shared diagnostic types
 │   └── iocutil.go                 — IOC type detection (IP, hash, domain)
 └── web/
     ├── components/
@@ -487,7 +449,6 @@ iocscan/
 |------|--------|
 | `integrations/yourvendor.go` | New file — fetch function, `Manifest()`, `Run()` |
 | `integrations/registry.go` | +1 line |
-| `utils/iputil_shim.go` or `utils/hashutil_shim.go` | Optional compatibility mapping if legacy typed endpoints must expose the new vendor |
 
 **Frontend files** (required for all integration types):
 
@@ -500,11 +461,9 @@ iocscan/
 
 | File | Change |
 |------|--------|
-| `server/server.go` | Load the stored key and pass it through to the processor/orchestrator |
-| `utils/iputil.go` | Add `yourvendorKey` field to `IPProcessor`, update `NewIPProcessor` signature |
-| `utils/iputil_shim.go` | Pass `keys["yourvendor"] = p.yourvendorKey` |
+| `server/server.go` | Load the stored key and pass it into the generic scan path |
 
-> **Note:** The primary scanner now calls generic scan endpoints and adapts generic `ScanResult` payloads locally inside the per-mode frontend composables. Legacy typed scan endpoints remain available as a compatibility bridge for older consumers.
+> **Note:** The primary scanner calls generic scan endpoints and adapts generic `ScanResult` payloads locally inside the per-mode frontend composables.
 
 ### Step 1 — Create `integrations/yourvendor.go`
 
@@ -583,29 +542,7 @@ func (y YourVendor) Run(ctx context.Context, ioc, apiKey string, useCache bool) 
 &YourVendor{},    // <- add this line
 ```
 
-**Done for domain integrations.** For IP and hash integrations, continue to Step 3.
-
-### Step 3 — Add shim mapping (IP and hash only)
-
-In `utils/iputil_shim.go`, add inside `buildComplexResult()`:
-
-```go
-// ── Your Vendor ───────────────────────────────────────────────────────────────
-if f, ok := sr.Results["yourvendor"]; ok {
-    result.YourVendor = &YVResult{
-        Score:  intField(f, "score"),
-        Status: strField(f, "status"),
-    }
-} else if errMsg, hasErr := sr.Errors["yourvendor"]; hasErr {
-    result.YourVendor = &YVResult{Error: errMsg}
-}
-```
-
-Also add the `YVResult` struct and a `YourVendor *YVResult` field to `ComplexResult` in `utils/iputil.go`.
-
-> **Why is this step needed?** The scan orchestrator returns generic `ScanResult` data. The legacy IP and hash API endpoints still use typed structs for backward compatibility with older consumers, so this mapping block only matters if you want the new vendor exposed through those older endpoints too.
-
-### Step 4 — Add or refine frontend presentation
+### Step 3 — Add or refine frontend presentation
 
 The current scanner already reads generic results through per-mode adapters, so the minimum integration experience is usually available through diagnostics, raw JSON, and exports without extra work. Add explicit UI only when the new vendor deserves a richer card or table presentation.
 
@@ -635,7 +572,7 @@ For example, in `web/components/IOCScanner.js`, add a card inside the IP cards g
 </div>
 ```
 
-### Step 5 — Wire the API key (if your integration requires one)
+### Step 4 — Wire the API key (if your integration requires one)
 
 **`auth/models.go`** — add encrypted storage for the new key:
 
@@ -650,63 +587,39 @@ type APIKeys struct {
 
 **`web/components/SettingsPage.js`** — add an input so users can manage the new key in `Settings`.
 
-**`utils/iputil.go`** — add to `IPProcessor` and `NewIPProcessor`:
-
-```go
-type IPProcessor struct {
-    // ... existing fields ...
-    yourvendorKey string
-}
-
-func NewIPProcessor(..., yourvendorKey string) *IPProcessor {
-    return &IPProcessor{..., yourvendorKey: yourvendorKey}
-}
-```
-
-**`utils/iputil_shim.go`** — pass the key into the keys map:
-
-```go
-keys := BuildKeys(p.vtKey, p.abuseKey, p.ipapiKey, p.abusechKey)
-keys["yourvendor"] = p.yourvendorKey
-```
-
-> **Note:** The shim/key plumbing inside `utils/iputil.go` and `utils/iputil_shim.go` still exists for backward-compatible typed responses. Browser-side per-scan key wiring no longer exists; keys are managed in `Settings` and loaded server-side for the authenticated user.
+> **Note:** Browser-side per-scan key wiring no longer exists. Keys are managed in `Settings` and loaded server-side for the authenticated user.
 
 ---
 
 ## Known Limitations
 
-### 1. Legacy typed compatibility layer
-
-The primary web UI now calls generic endpoints and adapts `ScanResult` payloads locally per mode (`useIPResults.js`, `useHashResults.js`, `useDomainResults.js`). Legacy endpoints still pass through compatibility shims (`iputil_shim.go`, `hashutil_shim.go`, `domainutil.go`) so older consumers can keep using the typed JSON response shapes during the transition.
-
-### 2. Hidden no-hit and error cards
+### 1. Hidden no-hit and error cards
 
 Benign no-hit cards (`not_found`, `no_results`, `hash_not_found`, `not_observed`) are hidden from the main card grid to reduce clutter. Hard-error cards are also suppressed. Miss/error detail remains available through the Diagnostics panel and the raw JSON output.
 
-### 3. Shared local cache
+### 2. Shared local cache
 
 Cache entries are shared at the application/database level, not isolated per user. That is appropriate for a local or small-team deployment, but it means users benefit from each other's cached vendor results.
 
-### 4. Legacy endpoints still exist
-
-`/api/scan`, `/api/scan/hash`, and `/api/scan/ioc` still return backward-compatible typed result shapes (`ComplexResult`, `HashResult`, `DomainResult`) built from the generic orchestrator output. The current scanner UI uses `/api/scan/generic`, `/api/scan/hash/generic`, and `/api/scan/ioc/generic`; the legacy endpoints remain only as a compatibility bridge.
-
-### 5. AbuseIPDB categories require verbose mode
+### 3. AbuseIPDB categories require verbose mode
 
 Category data is only returned when the API is queried with `verbose=true` and `maxAgeInDays` set. iocscan always uses verbose mode. Category IDs are mapped to names using the [official AbuseIPDB category list](https://www.abuseipdb.com/categories) and deduplicated across all reports before display.
 
-### 6. Domain support is VirusTotal + ThreatFox only
+### 4. Domain support is VirusTotal + ThreatFox only
 
 Domain scans query VirusTotal and ThreatFox only. Other integrations (AbuseIPDB, GreyNoise, ipapi.is) are IP-only by design. Future domain integrations (WHOIS, passive DNS, URLScan.io) can be added following the standard plugin pattern with no shim required.
 
-### 7. SQLite concurrency
+### 5. SQLite concurrency
 
 The cache database uses SQLite with WAL mode — appropriate for local and small team use. High-concurrency or multi-server deployments should migrate to PostgreSQL.
 
 ---
 
 ## Development
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for current API changes and migration notes.
 
 ### Prerequisites
 
@@ -764,7 +677,6 @@ git push origin v1.2.0
 ### Good areas to contribute
 
 - New integrations: Shodan InternetDB, OTX, Censys, URLScan — see [Adding a New Integration](#adding-a-new-integration)
-- Retiring the legacy typed compatibility endpoints once downstream consumers no longer need them
 - Auth system implementation
 - Additional IOC types (URLs)
 - CLI improvements (coloured output, table formatting)
