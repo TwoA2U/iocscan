@@ -22,10 +22,127 @@ export const hashSortAsc    = ref(true);
 export const hashError      = ref('');
 export const hashBulkCount  = ref(0);
 
+function isGenericHashResult(result) {
+    return !!(result && typeof result === 'object' && result.ioc && result.iocType === 'hash' && result.results);
+}
+
+function stringArray(value) {
+    if (Array.isArray(value)) return value.filter(Boolean).map(String);
+    if (value && typeof value === 'object') return Object.values(value).filter(Boolean).map(String);
+    if (typeof value === 'string' && value) return [value];
+    return [];
+}
+
+function cachedAll(result) {
+    const cacheHits = result?.cacheHits || {};
+    const results = result?.results || {};
+    const errors = result?.errors || {};
+    const hitCount = Object.keys(cacheHits).filter(key => cacheHits[key]).length;
+    return hitCount > 0 && hitCount === Object.keys(results).length + Object.keys(errors).length;
+}
+
+function diagnosticsFromGeneric(result) {
+    const names = new Set([
+        ...Object.keys(result?.results || {}),
+        ...Object.keys(result?.errors || {}),
+        ...Object.keys(result?.cacheHits || {}),
+    ]);
+    if (!names.size) return null;
+
+    const out = {};
+    for (const name of names) {
+        const fields = result.results?.[name] || {};
+        out[name] = {
+            cache: result.cacheHits?.[name] ? 'hit' : 'live',
+            status: result.errors?.[name] ? 'error' : (fields.queryStatus || 'ok'),
+            error: result.errors?.[name] || '',
+        };
+    }
+    return out;
+}
+
+function adaptGenericHashResult(result) {
+    if (!isGenericHashResult(result)) return result;
+
+    const vt = result.results?.virustotal_hash || {};
+    const mb = result.results?.malwarebazaar || {};
+    const tf = result.results?.threatfox_hash || null;
+    const sha256 = vt.sha256 || result.ioc;
+
+    return {
+        hash: result.ioc,
+        hashType: result.ioc.length === 32 ? 'MD5' : result.ioc.length === 40 ? 'SHA1' : result.ioc.length === 64 ? 'SHA256' : 'unknown',
+        riskLevel: result.riskLevel,
+        cached: cachedAll(result),
+        cacheHits: result.cacheHits || null,
+        diagnostics: diagnosticsFromGeneric(result),
+        links: {
+            virustotal: `https://www.virustotal.com/gui/file/${sha256}`,
+            malwarebazaar: `https://bazaar.abuse.ch/sample/${sha256}`,
+        },
+        virustotal: {
+            md5: vt.md5 || '',
+            sha1: vt.sha1 || '',
+            sha256: vt.sha256 || '',
+            meaningfulName: vt.meaningfulName || '',
+            magic: vt.magic || '',
+            magika: vt.magika || '',
+            malicious: vt.malicious || 0,
+            suspicious: vt.suspicious || 0,
+            harmless: vt.harmless || 0,
+            undetected: vt.undetected || 0,
+            reputation: vt.reputation || 0,
+            suggestedThreatLabel: vt.suggestedThreatLabel || '',
+            popularThreatNames: stringArray(vt.popularThreatNames),
+            popularThreatCategories: stringArray(vt.popularThreatCategories),
+            sandboxMalwareClassifications: stringArray(vt.sandboxMalwareClassifications),
+            sigmaAnalysisSummary: vt.sigmaAnalysisSummary || null,
+            signatureSigners: vt.signatureSigners || '',
+            signerDetail: vt.signerStatus ? {
+                status: vt.signerStatus || '',
+                name: vt.signerName || '',
+                certIssuer: vt.signerCertIssuer || '',
+                validFrom: vt.signerValidFrom || '',
+                validTo: vt.signerValidTo || '',
+            } : null,
+            error: result.errors?.virustotal_hash || '',
+        },
+        malwarebazaar: {
+            queryStatus: mb.queryStatus || (result.errors?.malwarebazaar ? 'error' : 'no_results'),
+            fileName: mb.fileName || '',
+            fileType: mb.fileType || '',
+            signature: mb.signature || '',
+            tags: stringArray(mb.tags),
+            comment: mb.comment || '',
+        },
+        threatfox: tf ? {
+            queryStatus: tf.queryStatus || 'ok',
+            iocs: tf.queryStatus === 'ok' ? [{
+                malware: tf.malware || '',
+                threatType: tf.threatType || '',
+                confidenceLevel: tf.confidenceLevel || 0,
+                firstSeen: tf.firstSeen || '',
+                tags: stringArray(tf.tags),
+            }] : [],
+        } : (result.errors?.threatfox_hash ? { queryStatus: 'error', iocs: [] } : null),
+    };
+}
+
+export function adaptHashEntries(entries) {
+    return (entries || []).map(entry => ({
+        hash: entry.hash || entry.ioc,
+        result: adaptGenericHashResult(entry.result || entry),
+        error: entry.error || '',
+    }));
+}
+
 // ─── Derived ──────────────────────────────────────────────────────────────────
 
 export const activeHashEntry  = computed(() => allHashResults.value[activeHashIdx.value] || null);
-export const activeHashResult = computed(() => activeHashEntry.value?.result || activeHashEntry.value || null);
+export const activeHashResult = computed(() => {
+    const raw = activeHashEntry.value?.result || activeHashEntry.value || null;
+    return adaptGenericHashResult(raw);
+});
 
 export const hashResultLinks = computed(() => {
     const r = activeHashResult.value;
@@ -72,8 +189,9 @@ export const vtNotFound = computed(() => {
 });
 
 export const highlightedHashJSON = computed(() => {
-    if (!activeHashResult.value) return '';
-    return highlightJSON(JSON.stringify(activeHashResult.value, null, 2));
+    const raw = activeHashEntry.value?.result || activeHashEntry.value || null;
+    if (!raw) return '';
+    return highlightJSON(JSON.stringify(raw, null, 2));
 });
 
 // ─── Table ────────────────────────────────────────────────────────────────────
@@ -85,7 +203,7 @@ export const visibleHashTableCols = computed(() => {
 });
 
 export const sortedHashRows = computed(() => {
-    const rows = allHashResults.value.map((e, i) => ({ ...(e.result || e), _idx: i, _hash: e.hash }));
+    const rows = allHashResults.value.map((e, i) => ({ ...adaptGenericHashResult(e.result || e), _idx: i, _hash: e.hash || e.ioc }));
     rows.sort((a, b) => {
         const va = getHashCellVal(a, hashSortCol.value);
         const vb = getHashCellVal(b, hashSortCol.value);
@@ -217,7 +335,7 @@ export function copyHashJSON(activeHashResultVal) {
 
 export async function copyHashClipboard(format, hashCopyMenuOpenRef) {
     hashCopyMenuOpenRef.value = false;
-    const rows = allHashResults.value.filter(e => e.result).map(e => e.result || e);
+    const rows = allHashResults.value.filter(e => e.result).map(e => adaptGenericHashResult(e.result || e));
     if (!rows.length) return;
     let text = '';
     if (format === 'json') {
@@ -238,7 +356,7 @@ export async function copyHashClipboard(format, hashCopyMenuOpenRef) {
 }
 
 export function exportHashCSV() {
-    const rows = allHashResults.value.filter(e => e.result).map(e => e.result || e);
+    const rows = allHashResults.value.filter(e => e.result).map(e => adaptGenericHashResult(e.result || e));
     if (!rows.length) return;
     const { header, lines } = _buildHashCSV(rows);
     _download([header, ...lines].join('\n'), 'iocscan_hash_results.csv', 'text/csv');

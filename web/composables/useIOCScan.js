@@ -59,7 +59,7 @@ export const wideShell = computed(() =>
 export const colBadge = computed(() => makeColBadge(currentIOCMode.value));
 
 export const ipDrawerSections = computed(() =>
-    makeIpDrawerSections(IPResults.allResults.value, IPResults.activeIdx.value)
+    makeIpDrawerSections(IPResults.adaptIPEntries(IPResults.allResults.value), IPResults.activeIdx.value)
 );
 
 export const hashDrawerSections = computed(() => {
@@ -273,7 +273,7 @@ export async function doIPScan() {
     IPResults.ipError.value = '';
     isIPLoading.value = true;
     try {
-        const data = await apiFetch('/api/scan', {
+        const data = await apiFetch('/api/scan/generic', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -284,7 +284,10 @@ export async function doIPScan() {
         const prevCount = IPResults.allResults.value.length;
         IPResults.allResults.value = data;
         IPResults.activeIdx.value  = 0;
-        data.forEach(e => { if (e.result) addHist(e.ip, e.result.riskLevel || 'CLEAN', 'ip'); });
+        data.forEach(e => {
+            const r = e.result || e;
+            if (r) addHist(e.ip || e.ioc || r.ipAddress || r.ip || '?', r.riskLevel || 'CLEAN', 'ip');
+        });
         if (currentView.value === 'table' && data.length !== prevCount) IPResults.tableSortCol.value = '#';
         nextTick(() => { document.getElementById('ip-results-bar')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); });
     } catch (e) {
@@ -302,17 +305,17 @@ export async function doHashScanAction() {
     HashResults.hashError.value = '';
     isHashLoading.value = true;
     try {
-        const data = await apiFetch('/api/scan/hash', {
+        const data = await apiFetch('/api/scan/hash/generic', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ hashes, use_cache: hashUseCache.value }),
         });
         HashResults.allHashResults.value = data;
         HashResults.activeHashIdx.value  = 0;
-        buildHashDynCols(data);
+        buildHashDynCols(HashResults.adaptHashEntries(data));
         data.forEach(e => {
             const r = e.result || e;
-            addHist(e.hash || r.virustotal?.sha256 || r.virustotal?.md5 || '?', r.riskLevel || (e.error ? 'ERROR' : 'UNKNOWN'));
+            addHist(e.hash || e.ioc || r.virustotal?.sha256 || r.virustotal?.md5 || '?', r.riskLevel || (e.error ? 'ERROR' : 'UNKNOWN'), 'hash');
         });
     } catch (err) {
         HashResults.hashError.value = 'Hash scan error: ' + err.message;
@@ -332,7 +335,7 @@ export async function doDomainScan() {
     DomainResults.domainError.value = '';
     DomainResults.isDomainLoading.value = true;
     try {
-        const data = await apiFetch('/api/scan/ioc', {
+        const data = await apiFetch('/api/scan/ioc/generic', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -344,7 +347,7 @@ export async function doDomainScan() {
         DomainResults.activeDomainIdx.value  = 0;
         data.forEach(e => {
             const r = e.result || e;
-            addHist(e.ioc || r.domain || '?', r.riskLevel || (e.error ? 'ERROR' : 'UNKNOWN'), 'domain');
+            addHist(e.ioc || r.ioc || '?', r.riskLevel || (e.error ? 'ERROR' : 'UNKNOWN'), 'domain');
         });
     } catch (err) {
         DomainResults.domainError.value = 'Domain scan error: ' + err.message;

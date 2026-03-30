@@ -9,6 +9,7 @@ import (
 	_ "modernc.org/sqlite"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -119,11 +120,7 @@ var (
 	dbReady  bool
 )
 
-var allowedTables = map[string]bool{
-	"VT_IP": true, "ABUSE_IP": true, "IPAPIIS_IP": true, "GN_IP": true,
-	"VT_HASH": true, "MB_HASH": true, "TF_IP": true, "TF_HASH": true,
-	"VT_DOMAIN": true, "TF_DOMAIN": true,
-}
+var cacheTableNameRe = regexp.MustCompile(`^[A-Z0-9_]+$`)
 
 var sqliteTimeFormats = []string{
 	"2006-01-02 15:04:05",
@@ -191,31 +188,25 @@ func InitDB() {
 		return
 	}
 
-	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS VT_IP      (KEY TEXT PRIMARY KEY NOT NULL, DATA TEXT NOT NULL, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
-		CREATE TABLE IF NOT EXISTS ABUSE_IP   (KEY TEXT PRIMARY KEY NOT NULL, DATA TEXT NOT NULL, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
-		CREATE TABLE IF NOT EXISTS IPAPIIS_IP (KEY TEXT PRIMARY KEY NOT NULL, DATA TEXT NOT NULL, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
-		CREATE TABLE IF NOT EXISTS VT_HASH    (KEY TEXT PRIMARY KEY NOT NULL, DATA TEXT NOT NULL, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
-		CREATE TABLE IF NOT EXISTS MB_HASH    (KEY TEXT PRIMARY KEY NOT NULL, DATA TEXT NOT NULL, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
-		CREATE TABLE IF NOT EXISTS TF_IP      (KEY TEXT PRIMARY KEY NOT NULL, DATA TEXT NOT NULL, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
-		CREATE TABLE IF NOT EXISTS TF_HASH    (KEY TEXT PRIMARY KEY NOT NULL, DATA TEXT NOT NULL, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
-		CREATE TABLE IF NOT EXISTS GN_IP      (KEY TEXT PRIMARY KEY NOT NULL, DATA TEXT NOT NULL, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
-		CREATE TABLE IF NOT EXISTS VT_DOMAIN  (KEY TEXT PRIMARY KEY NOT NULL, DATA TEXT NOT NULL, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
-		CREATE TABLE IF NOT EXISTS TF_DOMAIN  (KEY TEXT PRIMARY KEY NOT NULL, DATA TEXT NOT NULL, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
-		CREATE INDEX IF NOT EXISTS idx_vt_ip_created    ON VT_IP(CREATED_AT);
-		CREATE INDEX IF NOT EXISTS idx_abuse_ip_created ON ABUSE_IP(CREATED_AT);
-		CREATE INDEX IF NOT EXISTS idx_ipapiis_created  ON IPAPIIS_IP(CREATED_AT);
-		CREATE INDEX IF NOT EXISTS idx_vt_hash_created  ON VT_HASH(CREATED_AT);
-		CREATE INDEX IF NOT EXISTS idx_mb_hash_created  ON MB_HASH(CREATED_AT);
-		CREATE INDEX IF NOT EXISTS idx_tf_ip_created    ON TF_IP(CREATED_AT);
-		CREATE INDEX IF NOT EXISTS idx_tf_hash_created  ON TF_HASH(CREATED_AT);
-		CREATE INDEX IF NOT EXISTS idx_gn_ip_created    ON GN_IP(CREATED_AT);
-		CREATE INDEX IF NOT EXISTS idx_vt_domain_created ON VT_DOMAIN(CREATED_AT);
-		CREATE INDEX IF NOT EXISTS idx_tf_domain_created ON TF_DOMAIN(CREATED_AT);
-	`)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "InitDB cache tables: %v\n", err)
-		return
+	for _, table := range integrations.CacheTables() {
+		if !isAllowedCacheTable(table) {
+			fmt.Fprintf(os.Stderr, "InitDB cache tables: invalid table name %q\n", table)
+			return
+		}
+		stmt := fmt.Sprintf(
+			`CREATE TABLE IF NOT EXISTS %s (KEY TEXT PRIMARY KEY NOT NULL, DATA TEXT NOT NULL, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
+			table,
+		)
+		if _, err := db.Exec(stmt); err != nil {
+			fmt.Fprintf(os.Stderr, "InitDB cache table %s: %v\n", table, err)
+			return
+		}
+		indexName := "idx_" + strings.ToLower(table) + "_created"
+		indexStmt := fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %s ON %s(CREATED_AT)`, indexName, table)
+		if _, err := db.Exec(indexStmt); err != nil {
+			fmt.Fprintf(os.Stderr, "InitDB cache index %s: %v\n", table, err)
+			return
+		}
 	}
 
 	// Auth tables — additive, safe to run on existing DBs.
@@ -281,7 +272,7 @@ func InitDB() {
 // ── Unified cache helpers ─────────────────────────────────────────────────────
 
 func getCacheEntry(key, table string) string {
-	if !allowedTables[table] {
+	if !isAllowedCacheTable(table) {
 		return ""
 	}
 	db, err := getSharedDB()
@@ -302,7 +293,7 @@ func getCacheEntry(key, table string) string {
 }
 
 func putCacheEntry(key, data, table string) {
-	if !allowedTables[table] {
+	if !isAllowedCacheTable(table) {
 		return
 	}
 	db, err := getSharedDB()
@@ -321,7 +312,7 @@ func ClearCaches(tables []string) int {
 	}
 	total := 0
 	for _, t := range tables {
-		if !allowedTables[t] {
+		if !isAllowedCacheTable(t) {
 			continue
 		}
 		res, err := db.Exec(fmt.Sprintf("DELETE FROM %s", t))
@@ -336,4 +327,16 @@ func ClearCaches(tables []string) int {
 // ClearHashCaches is kept as a compatibility wrapper for older call sites.
 func ClearHashCaches(tables []string) int {
 	return ClearCaches(tables)
+}
+
+func isAllowedCacheTable(table string) bool {
+	if !cacheTableNameRe.MatchString(table) {
+		return false
+	}
+	for _, allowed := range integrations.CacheTables() {
+		if table == allowed {
+			return true
+		}
+	}
+	return false
 }

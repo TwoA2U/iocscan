@@ -23,12 +23,149 @@ export const ipError      = ref('');
 export const isDragging   = ref(false);
 export const ipBulkCount  = ref(0);
 
+function isGenericIPResult(result) {
+    return !!(result && typeof result === 'object' && result.ioc && result.iocType === 'ip' && result.results);
+}
+
+function stringArray(value) {
+    if (Array.isArray(value)) return value.filter(Boolean).map(String);
+    if (value && typeof value === 'object') return Object.values(value).filter(Boolean).map(String);
+    if (typeof value === 'string' && value) return [value];
+    return [];
+}
+
+function cachedAll(result) {
+    const cacheHits = result?.cacheHits || {};
+    const results = result?.results || {};
+    const errors = result?.errors || {};
+    const hitCount = Object.keys(cacheHits).filter(key => cacheHits[key]).length;
+    return hitCount > 0 && hitCount === Object.keys(results).length + Object.keys(errors).length;
+}
+
+function diagnosticsFromGeneric(result) {
+    const names = new Set([
+        ...Object.keys(result?.results || {}),
+        ...Object.keys(result?.errors || {}),
+        ...Object.keys(result?.cacheHits || {}),
+    ]);
+    if (!names.size) return null;
+
+    const out = {};
+    for (const name of names) {
+        const fields = result.results?.[name] || {};
+        let status = 'ok';
+        if (result.errors?.[name]) {
+            status = 'error';
+        } else if (typeof fields.queryStatus === 'string' && fields.queryStatus) {
+            status = fields.queryStatus;
+        } else if (fields.notObserved) {
+            status = 'not_observed';
+        }
+
+        out[name] = {
+            cache: result.cacheHits?.[name] ? 'hit' : 'live',
+            status,
+            error: result.errors?.[name] || '',
+        };
+    }
+    return out;
+}
+
+function adaptGenericIPResult(result) {
+    if (!isGenericIPResult(result)) return result;
+
+    const abuse = result.results?.abuseipdb || {};
+    const ipapi = result.results?.ipapi || {};
+    const vt = result.results?.virustotal_ip || {};
+    const tf = result.results?.threatfox_ip || null;
+    const gn = result.results?.greynoise || null;
+
+    return {
+        ipAddress: result.ioc,
+        riskLevel: result.riskLevel,
+        cached: cachedAll(result),
+        cacheHits: result.cacheHits || null,
+        diagnostics: diagnosticsFromGeneric(result),
+        links: {
+            ipapi: `https://api.ipapi.is/?q=${result.ioc}`,
+            abuseipdb: `https://www.abuseipdb.com/check/${result.ioc}`,
+            virustotal: `https://www.virustotal.com/gui/ip-address/${result.ioc}`,
+        },
+        geo: {
+            isp: abuse.isp || ipapi.org || '',
+            country: ipapi.country || abuse.countryCode || '',
+            countryCode: abuse.countryCode || '',
+            city: ipapi.city || '',
+            state: ipapi.state || '',
+            timezone: ipapi.timezone || '',
+            isPublic: !!abuse.isPublic,
+            isWhitelisted: !!abuse.isWhitelisted,
+            hostnames: stringArray(abuse.hostnames),
+        },
+        virustotal: {
+            malicious: vt.malicious || 0,
+            suspicious: vt.suspicious || 0,
+            undetected: vt.undetected || 0,
+            harmless: vt.harmless || 0,
+            reputation: vt.reputation || 0,
+            lastAnalysisDate: vt.lastAnalysisDate || '',
+            error: result.errors?.virustotal_ip || '',
+        },
+        abuseipdb: {
+            confidenceScore: abuse.confidenceScore || 0,
+            totalReports: abuse.totalReports || 0,
+            numDistinctUsers: abuse.numDistinctUsers || 0,
+            lastReportedAt: abuse.lastReportedAt || '',
+            usageType: abuse.usageType || '',
+            domain: abuse.domain || '',
+            isTor: !!abuse.isTor,
+            isPublic: !!abuse.isPublic,
+            isWhitelisted: !!abuse.isWhitelisted,
+            hostnames: stringArray(abuse.hostnames),
+            categories: stringArray(abuse.categories),
+            error: result.errors?.abuseipdb || '',
+        },
+        threatfox: tf ? {
+            queryStatus: tf.queryStatus || 'ok',
+            threatType: tf.threatType || '',
+            malware: tf.malware || '',
+            malwareAlias: tf.malwareAlias || '',
+            confidenceLevel: tf.confidenceLevel || 0,
+            firstSeen: tf.firstSeen || '',
+            lastSeen: tf.lastSeen || '',
+            reporter: tf.reporter || '',
+            tags: stringArray(tf.tags),
+        } : (result.errors?.threatfox_ip ? { queryStatus: 'error' } : null),
+        greynoise: gn ? {
+            classification: gn.classification || '',
+            noise: !!gn.noise,
+            riot: !!gn.riot,
+            name: gn.name || '',
+            lastSeen: gn.lastSeen || '',
+            notObserved: !!gn.notObserved,
+            error: result.errors?.greynoise || '',
+        } : (result.errors?.greynoise ? { error: result.errors.greynoise } : null),
+    };
+}
+
+export function adaptIPEntries(entries) {
+    return (entries || []).map(entry => ({
+        ip: entry.ip || entry.ioc,
+        result: adaptGenericIPResult(entry.result || entry),
+        error: entry.error || '',
+    }));
+}
+
 // ─── Derived ──────────────────────────────────────────────────────────────────
 
 export const activeResultEntry = computed(() => allResults.value[activeIdx.value] || null);
-export const activeResult      = computed(() => activeResultEntry.value?.result || activeResultEntry.value || null);
+export const activeResult      = computed(() => {
+    const raw = activeResultEntry.value?.result || activeResultEntry.value || null;
+    return adaptGenericIPResult(raw);
+});
 export const activeResultIP    = computed(() =>
     activeResultEntry.value?.ip ||
+    activeResultEntry.value?.ioc ||
     activeResult.value?.ipAddress ||
     activeResult.value?.ip ||
     ''
@@ -49,8 +186,9 @@ export const networkRows = computed(() => {
 });
 
 export const highlightedJSON = computed(() => {
-    if (!activeResult.value) return '';
-    return highlightJSON(JSON.stringify(activeResult.value, null, 2));
+    const raw = activeResultEntry.value?.result || activeResultEntry.value || null;
+    if (!raw) return '';
+    return highlightJSON(JSON.stringify(raw, null, 2));
 });
 
 // ─── Table columns ────────────────────────────────────────────────────────────
@@ -88,7 +226,7 @@ export const visibleTableCols = computed(() => TABLE_COLS.filter(c => isColVisib
 
 export const sortedTableRows = computed(() => {
     const rows = allResults.value
-        .map((e, i) => ({ ...(e.result || e), _ip: e.ip || e.ipAddress || e.ip, _idx: i }))
+        .map((e, i) => ({ ...adaptGenericIPResult(e.result || e), _ip: e.ip || e.ioc || e.ipAddress || e.ip, _idx: i }))
         .filter(e => !!(e.ipAddress || e.ip || e._ip));
     const col = TABLE_COLS.find(c => c.key === tableSortCol.value);
     if (col) rows.sort((a, b) => {
@@ -171,7 +309,7 @@ export function copyJSON(activeResultVal) {
 
 export async function copyClipboard(format, copyMenuOpenRef) {
     copyMenuOpenRef.value = false;
-    const rows = allResults.value.map(e => e.result || e).filter(e => !!e);
+    const rows = allResults.value.map(e => adaptGenericIPResult(e.result || e)).filter(e => !!e);
     if (!rows.length) return;
     let text = '';
     if (format === 'json') {
@@ -198,7 +336,7 @@ export async function copyClipboard(format, copyMenuOpenRef) {
 }
 
 export function exportCSV() {
-    const rows = allResults.value.map(e => e.result || e).filter(e => !!e);
+    const rows = allResults.value.map(e => adaptGenericIPResult(e.result || e)).filter(e => !!e);
     if (!rows.length) return;
     const cols   = TABLE_COLS.filter(c => c.key !== '#' && isColVisible(c));
     const header = cols.map(c => c.label).join(',');
@@ -222,7 +360,7 @@ export function exportJSON() {
 
 function _buildFilteredRows() {
     const cols = TABLE_COLS.filter(c => c.key !== '#' && isColVisible(c));
-    return allResults.value.map((e, i) => ({ row: e.result || e, idx: i }))
+    return allResults.value.map((e, i) => ({ row: adaptGenericIPResult(e.result || e), idx: i }))
         .filter(({ row }) => !!row)
         .map(({ row, idx }) => {
         const obj = {};

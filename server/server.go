@@ -8,9 +8,12 @@
 //	GET  /                   → HTML single-page app (and all web/ static assets)
 //	GET  /api/health         → health check
 //	GET  /api/integrations   → integration manifests
-//	POST /api/scan           → IP enrichment
-//	POST /api/scan/hash      → Hash enrichment
-//	POST /api/scan/ioc       → Mixed IOC enrichment
+//	POST /api/scan           → Legacy IP enrichment response
+//	POST /api/scan/generic   → Generic IP ScanResult response
+//	POST /api/scan/hash      → Legacy hash enrichment response
+//	POST /api/scan/hash/generic → Generic hash ScanResult response
+//	POST /api/scan/ioc       → Legacy mixed IOC enrichment response
+//	POST /api/scan/ioc/generic → Generic mixed IOC ScanResult response
 //	POST /api/cache/clear    → Cache management
 //
 // Rate limiting: per-IP token-bucket (5 req burst, 1 req/500ms) on scan endpoints.
@@ -99,8 +102,11 @@ func Start(port int, cfgFile string, ui fs.FS, db *sql.DB, encKey []byte) {
 
 		// Scan endpoints
 		r.Post("/api/scan", rateLimit(serveScan))
+		r.Post("/api/scan/generic", rateLimit(serveGenericIPScan))
 		r.Post("/api/scan/hash", rateLimit(serveHashScan))
+		r.Post("/api/scan/hash/generic", rateLimit(serveGenericHashScan))
 		r.Post("/api/scan/ioc", rateLimit(serveIOCScan))
+		r.Post("/api/scan/ioc/generic", rateLimit(serveGenericIOCScan))
 		r.Post("/api/cache/clear", serveCacheClear)
 
 		// API key management
@@ -329,6 +335,60 @@ type scanRequest struct {
 	UseCache     bool   `json:"use_cache"`
 }
 
+type genericScanEntry struct {
+	IOC    string            `json:"ioc"`
+	Type   string            `json:"type"`
+	Result *utils.ScanResult `json:"result,omitempty"`
+	Error  string            `json:"error,omitempty"`
+}
+
+func genericScanResult(ctx context.Context, ioc string, iocType integrations.IOCType, keys *auth.APIKeys, useCache bool) (*utils.ScanResult, error) {
+	keyMap := utils.BuildKeys(keys.VTKey, keys.AbuseKey, keys.IPApiKey, keys.AbuseCHKey)
+	keyMap["greynoise"] = keys.GreyNoiseKey
+	return utils.Scan(ctx, ioc, iocType, keyMap, useCache)
+}
+
+func serveGenericIPScan(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
+
+	var req struct {
+		IP       string `json:"ip"`
+		UseCache bool   `json:"use_cache"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	if req.IP == "" {
+		jsonError(w, `"ip" field is required`, http.StatusBadRequest)
+		return
+	}
+
+	ips, err := utils.CheckIP(req.IP)
+	if err != nil {
+		jsonError(w, fmt.Sprintf("invalid IP: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	keys := loadKeys(r)
+	results := make([]genericScanEntry, len(ips))
+	for i, ip := range ips {
+		results[i] = genericScanEntry{IOC: ip, Type: string(utils.TypeIP)}
+	}
+
+	ctx := r.Context()
+	runChunked(ctx, len(ips), 10, 300*time.Millisecond, func(i int) {
+		sr, err := genericScanResult(ctx, ips[i], integrations.IOCTypeIP, keys, req.UseCache)
+		if err != nil {
+			results[i].Error = err.Error()
+			return
+		}
+		results[i].Result = sr
+	})
+
+	writeJSON(w, results)
+}
+
 func serveScan(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 
@@ -371,6 +431,51 @@ func serveScan(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		results[i].Result = json.RawMessage(raw)
+	})
+
+	writeJSON(w, results)
+}
+
+func serveGenericHashScan(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
+
+	var req struct {
+		Hashes   []string `json:"hashes"`
+		UseCache bool     `json:"use_cache"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	if len(req.Hashes) == 0 {
+		jsonError(w, `"hashes" field is required`, http.StatusBadRequest)
+		return
+	}
+	if len(req.Hashes) > 100 {
+		req.Hashes = req.Hashes[:100]
+	}
+
+	keys := loadKeys(r)
+	results := make([]genericScanEntry, len(req.Hashes))
+	for i, hash := range req.Hashes {
+		h := strings.ToLower(strings.TrimSpace(hash))
+		results[i] = genericScanEntry{IOC: h, Type: string(utils.TypeHash)}
+		if utils.DetectIOCType(h) != utils.TypeHash {
+			results[i].Error = "unsupported hash (expected MD5/SHA1/SHA256 hex)"
+		}
+	}
+
+	ctx := r.Context()
+	runChunked(ctx, len(req.Hashes), 5, 500*time.Millisecond, func(i int) {
+		if results[i].Error != "" {
+			return
+		}
+		sr, err := genericScanResult(ctx, results[i].IOC, integrations.IOCTypeHash, keys, req.UseCache)
+		if err != nil {
+			results[i].Error = err.Error()
+			return
+		}
+		results[i].Result = sr
 	})
 
 	writeJSON(w, results)
@@ -420,6 +525,75 @@ func serveHashScan(w http.ResponseWriter, r *http.Request) {
 		results[i].Result = json.RawMessage(raw)
 	})
 
+	writeJSON(w, results)
+}
+
+func serveGenericIOCScan(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
+
+	var req struct {
+		IOCs     []string `json:"iocs"`
+		UseCache bool     `json:"use_cache"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	if len(req.IOCs) == 0 {
+		jsonError(w, `"iocs" field is required`, http.StatusBadRequest)
+		return
+	}
+	if len(req.IOCs) > 100 {
+		req.IOCs = req.IOCs[:100]
+	}
+
+	keys := loadKeys(r)
+	results := make([]genericScanEntry, len(req.IOCs))
+	for i, ioc := range req.IOCs {
+		ioc = strings.TrimSpace(ioc)
+		results[i] = genericScanEntry{
+			IOC:  ioc,
+			Type: string(utils.DetectIOCType(ioc)),
+		}
+		if results[i].Type == string(utils.TypeUnknown) {
+			results[i].Error = "unknown IOC type"
+		}
+	}
+
+	ctx := r.Context()
+	var pipelineWg sync.WaitGroup
+	pipelineWg.Add(3)
+
+	runGenericBatch := func(idxs []int, chunkSize int, delay time.Duration, iocType integrations.IOCType) {
+		defer pipelineWg.Done()
+		runChunked(ctx, len(idxs), chunkSize, delay, func(i int) {
+			idx := idxs[i]
+			sr, err := genericScanResult(ctx, results[idx].IOC, iocType, keys, req.UseCache)
+			if err != nil {
+				results[idx].Error = err.Error()
+				return
+			}
+			results[idx].Result = sr
+		})
+	}
+
+	var ipIdxs, hashIdxs, domainIdxs []int
+	for i, entry := range results {
+		switch entry.Type {
+		case string(utils.TypeIP):
+			ipIdxs = append(ipIdxs, i)
+		case string(utils.TypeHash):
+			hashIdxs = append(hashIdxs, i)
+		case string(utils.TypeDomain):
+			domainIdxs = append(domainIdxs, i)
+		}
+	}
+
+	go runGenericBatch(ipIdxs, 10, 300*time.Millisecond, integrations.IOCTypeIP)
+	go runGenericBatch(hashIdxs, 5, 500*time.Millisecond, integrations.IOCTypeHash)
+	go runGenericBatch(domainIdxs, 5, 500*time.Millisecond, integrations.IOCTypeDomain)
+
+	pipelineWg.Wait()
 	writeJSON(w, results)
 }
 
@@ -530,7 +704,7 @@ func serveCacheClear(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewDecoder(r.Body).Decode(&req)
 
-	tables := []string{"VT_IP", "ABUSE_IP", "IPAPIIS_IP", "GN_IP", "VT_HASH", "MB_HASH", "TF_IP", "TF_HASH", "VT_DOMAIN", "TF_DOMAIN"}
+	tables := integrations.CacheTables()
 	if req.Table != "" && req.Table != "all" {
 		tables = []string{req.Table}
 	}

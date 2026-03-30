@@ -35,6 +35,10 @@ export const hashManifests = computed(() =>
     manifests.value.filter(m => m.enabled && Array.isArray(m.iocTypes) && m.iocTypes.includes('hash'))
 );
 
+export const domainManifests = computed(() =>
+    manifests.value.filter(m => m.enabled && Array.isArray(m.iocTypes) && m.iocTypes.includes('domain'))
+);
+
 // allAuthConfigs: unique AuthConfig objects across all integrations, deduplicated
 // by keyRef. Used to build API key inputs in ScanSettings automatically.
 export const allAuthConfigs = computed(() => {
@@ -78,6 +82,28 @@ export const hashTableColumns = computed(() => {
 // getManifest returns the manifest for a given integration name, or null.
 export function getManifest(name) {
     return manifests.value.find(m => m.name === name) ?? null;
+}
+
+export function getManifestsForIOCType(iocType) {
+    return manifests.value
+        .filter(m => m.enabled && Array.isArray(m.iocTypes) && m.iocTypes.includes(iocType))
+        .sort((a, b) => (a.card?.order ?? 999) - (b.card?.order ?? 999));
+}
+
+export function getTableColumnsForIOCType(iocType) {
+    const cols = [];
+    for (const manifest of getManifestsForIOCType(iocType)) {
+        for (const col of (manifest.tableColumns ?? [])) {
+            cols.push({ ...col, integration: manifest.name });
+        }
+    }
+    return cols;
+}
+
+export function findFieldDef(integrationName, key) {
+    const manifest = getManifest(integrationName);
+    if (!manifest?.card?.fields) return null;
+    return manifest.card.fields.find(field => field.key === key) ?? null;
 }
 
 // ── Fetch ─────────────────────────────────────────────────────────────────────

@@ -376,10 +376,10 @@ export default defineComponent({
 
         <!-- IP chip tabs -->
         <div v-if="allResults.length > 1 && currentView==='cards'" class="flex flex-wrap gap-2 mb-5">
-          <div v-for="(r,i) in allResults" :key="r.ip"
+          <div v-for="(r,i) in allResults" :key="r.ip || r.ioc || i"
                class="ip-tab" :class="{active: i===activeIdx}" @click="switchTab(i)">
             <span class="ip-tab-dot" :style="{background: riskDotColor(r.result ? r.result.riskLevel : null)}"></span>
-            {{ r.ip }}
+            {{ r.ip || r.ioc || '?' }}
           </div>
         </div>
 

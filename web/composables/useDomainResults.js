@@ -22,10 +22,105 @@ export const domainInputText   = ref('');
 export const domainUseCache    = ref(true);
 export const domainView        = ref('cards');
 
+function isGenericDomainResult(result) {
+    return !!(result && typeof result === 'object' && result.ioc && result.iocType === 'domain' && result.results);
+}
+
+function stringArray(value) {
+    if (Array.isArray(value)) return value.filter(Boolean).map(String);
+    if (value && typeof value === 'object') return Object.values(value).filter(Boolean).map(String);
+    if (typeof value === 'string' && value) return [value];
+    return [];
+}
+
+function cachedAll(result) {
+    const cacheHits = result?.cacheHits || {};
+    const results = result?.results || {};
+    const errors = result?.errors || {};
+    const hitCount = Object.keys(cacheHits).filter(key => cacheHits[key]).length;
+    return hitCount > 0 && hitCount === Object.keys(results).length + Object.keys(errors).length;
+}
+
+function diagnosticsFromGeneric(result) {
+    const names = new Set([
+        ...Object.keys(result?.results || {}),
+        ...Object.keys(result?.errors || {}),
+        ...Object.keys(result?.cacheHits || {}),
+    ]);
+    if (!names.size) return null;
+
+    const out = {};
+    for (const name of names) {
+        const fields = result.results?.[name] || {};
+        out[name] = {
+            cache: result.cacheHits?.[name] ? 'hit' : 'live',
+            status: result.errors?.[name]
+                ? 'error'
+                : (fields.queryStatus || 'ok'),
+            error: result.errors?.[name] || '',
+        };
+    }
+    return out;
+}
+
+function adaptGenericDomainResult(result) {
+    if (!isGenericDomainResult(result)) return result;
+
+    const vt = result.results?.virustotal_domain || {};
+    const tf = result.results?.threatfox_domain || null;
+
+    return {
+        domain: result.ioc,
+        riskLevel: result.riskLevel,
+        cached: cachedAll(result),
+        cacheHits: result.cacheHits || null,
+        diagnostics: diagnosticsFromGeneric(result),
+        links: {
+            virustotal: `https://www.virustotal.com/gui/domain/${result.ioc}`,
+            threatfox: `https://threatfox.abuse.ch/browse.php?search=ioc%3A${result.ioc}`,
+        },
+        virustotal: {
+            malicious: vt.malicious || 0,
+            suspicious: vt.suspicious || 0,
+            harmless: vt.harmless || 0,
+            undetected: vt.undetected || 0,
+            reputation: vt.reputation || 0,
+            error: result.errors?.virustotal_domain || '',
+        },
+        vtDomain: {
+            malicious: vt.malicious || 0,
+            suspicious: vt.suspicious || 0,
+            harmless: vt.harmless || 0,
+            undetected: vt.undetected || 0,
+            reputation: vt.reputation || 0,
+            suggestedThreatLabel: vt.suggestedThreatLabel || '',
+            registrar: vt.registrar || '',
+            categories: stringArray(vt.categories),
+            aRecords: stringArray(vt.aRecords),
+            creationDate: vt.creationDate || '',
+            error: result.errors?.virustotal_domain || '',
+        },
+        threatfox: tf ? {
+            queryStatus: tf.queryStatus || 'ok',
+            threatType: tf.threatType || '',
+            malware: tf.malware || '',
+            malwareAlias: tf.malwareAlias || '',
+            confidenceLevel: tf.confidenceLevel || 0,
+            firstSeen: tf.firstSeen || '',
+            lastSeen: tf.lastSeen || '',
+            reporter: tf.reporter || '',
+            tags: stringArray(tf.tags),
+        } : (result.errors?.threatfox_domain ? { queryStatus: 'error' } : null),
+    };
+}
+
 // ─── Derived ──────────────────────────────────────────────────────────────────
 
 export const activeDomainEntry  = computed(() => allDomainResults.value[activeDomainIdx.value] || null);
-export const activeDomainResult = computed(() => activeDomainEntry.value?.result || activeDomainEntry.value || null);
+export const activeDomainResult = computed(() => {
+    const raw = activeDomainEntry.value?.result || activeDomainEntry.value || null;
+    return adaptGenericDomainResult(raw);
+});
 
 export const domainResultLinks = computed(() => {
     const r = activeDomainResult.value;
@@ -34,8 +129,9 @@ export const domainResultLinks = computed(() => {
 });
 
 export const highlightedDomainJSON = computed(() => {
-    if (!activeDomainResult.value) return '';
-    return highlightJSON(JSON.stringify(activeDomainResult.value, null, 2));
+    const raw = activeDomainEntry.value?.result || activeDomainEntry.value || null;
+    if (!raw) return '';
+    return highlightJSON(JSON.stringify(raw, null, 2));
 });
 
 // ─── Domain regex (mirrors iocutil.go) ────────────────────────────────────────
@@ -82,9 +178,9 @@ export const visibleDomainTableCols = computed(() =>
 
 export const sortedDomainRows = computed(() => {
     const rows = allDomainResults.value.map((e, i) => ({
-        ...(e.result || e),
+        ...adaptGenericDomainResult(e.result || e),
         _idx: i,
-        _domain: e.domain || (e.result || e).domain,
+        _domain: e.domain || adaptGenericDomainResult(e.result || e)?.domain,
     }));
     const col = DOMAIN_TABLE_COLS.find(c => c.key === domainSortCol.value);
     if (col) {
@@ -137,7 +233,9 @@ export function copyDomainJSON(activeResultVal) {
 }
 
 export function exportDomainCSV() {
-    const rows = allDomainResults.value.filter(e => e.result).map(e => e.result || e);
+    const rows = allDomainResults.value
+        .filter(e => e.result)
+        .map(e => adaptGenericDomainResult(e.result || e));
     if (!rows.length) return;
     const cols   = DOMAIN_TABLE_COLS.filter(c => c.key !== '#');
     const header = cols.map(c => c.label).join(',');

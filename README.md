@@ -39,7 +39,7 @@ Query indicators against VirusTotal, AbuseIPDB, ThreatFox, ipapi.is, MalwareBaza
 - **Domain enrichment** — VirusTotal multi-engine verdict, reputation, registrar, creation date, A records, categories, and ThreatFox C2 intelligence
 - **Multi-signal risk scoring** — `riskLevel` computed from manifest-driven rules across all integrations; any single signal can escalate the level independently
 - **Plugin architecture** — each integration is a self-contained Go file implementing a single interface; adding a new vendor requires one file and one registry line
-- **Web UI** — Tailwind CSS + Vue 3, authenticated scanner, cards/table views, column visibility toggles, export to CSV/JSON, scan history, and per-vendor cache diagnostics. Cards show full vendor data including AbuseIPDB categories, VirusTotal last scanned time, and GreyNoise classification. Benign no-hit cards are hidden automatically — miss/error detail remains available in diagnostics and raw JSON
+- **Web UI** — Tailwind CSS + Vue 3, authenticated scanner, manifest-driven cards/table views, column visibility toggles, export to CSV/JSON, scan history, and per-vendor cache diagnostics. Cards show full vendor data including AbuseIPDB categories, VirusTotal last scanned time, and GreyNoise classification. Benign no-hit cards are hidden automatically — miss/error detail remains available in diagnostics and raw JSON
 - **Bulk scanning** — up to 100 IPs, hashes, or domains per request
 - **Local cache** — SQLite-backed caching per integration to avoid redundant API calls
 - **Rate limiting** — built-in token-bucket limiter with 1 MB request body cap
@@ -455,7 +455,7 @@ iocscan/
 
 | File | Change |
 |------|--------|
-| `web/components/IOCScanner.js` | Add hardcoded card template for the new vendor |
+| `web/components/IOCScanner.js` | Generic scanner consumes manifests and generic `ScanResult`; new vendors should render automatically unless they need custom UX |
 | `auth/models.go` / `auth/handlers.go` | Add encrypted per-user key storage fields if the vendor requires a new key |
 
 **Additional wiring for IP integrations that require a key** (e.g. GreyNoise):
@@ -466,7 +466,7 @@ iocscan/
 | `utils/iputil.go` | Add `yourvendorKey` field to `IPProcessor`, update `NewIPProcessor` signature |
 | `utils/iputil_shim.go` | Pass `keys["yourvendor"] = p.yourvendorKey` |
 
-> **Note:** The frontend card template is still manual for the legacy scanner path. Key entry is no longer sent per scan from the browser — keys are managed in `Settings` and loaded server-side for the authenticated user.
+> **Note:** The primary scanner now renders generic `ScanResult` data via integration manifests. Legacy typed scan endpoints remain available as a compatibility bridge while older clients transition.
 
 ### Step 1 — Create `integrations/yourvendor.go`
 
@@ -636,13 +636,9 @@ keys["yourvendor"] = p.yourvendorKey
 
 ## Known Limitations
 
-### 1. Shim layer (IP and hash integrations)
+### 1. Legacy typed compatibility layer
 
-IP and hash scan results pass through compatibility shims (`iputil_shim.go`, `hashutil_shim.go`) that map the generic `ScanResult` into the typed JSON structs the frontend expects. Every new IP or hash integration requires a manual mapping block (~10 lines) in the relevant shim.
-
-Domain integrations do not have this limitation.
-
-**Planned fix:** Remove shims when the frontend migrates to consuming `ScanResult` directly via manifests. Planned alongside the auth system.
+The primary web UI now consumes generic `ScanResult` payloads directly via integration manifests. Legacy endpoints still pass through compatibility shims (`iputil_shim.go`, `hashutil_shim.go`, `domainutil.go`) so older consumers can keep using the typed JSON response shapes during the transition.
 
 ### 2. Hidden no-hit and error cards
 
@@ -652,9 +648,9 @@ Benign no-hit cards (`not_found`, `no_results`, `hash_not_found`, `not_observed`
 
 Cache entries are shared at the application/database level, not isolated per user. That is appropriate for a local or small-team deployment, but it means users benefit from each other's cached vendor results.
 
-### 4. Legacy shim layer still exists
+### 4. Legacy endpoints still exist
 
-`/api/scan`, `/api/scan/hash`, and `/api/scan/ioc` still return backward-compatible typed result shapes (`ComplexResult`, `HashResult`, `DomainResult`) built from the generic orchestrator output. This keeps the current scanner UI stable, but it means some integration additions still require shim mapping and card wiring.
+`/api/scan`, `/api/scan/hash`, and `/api/scan/ioc` still return backward-compatible typed result shapes (`ComplexResult`, `HashResult`, `DomainResult`) built from the generic orchestrator output. The current scanner UI uses the new generic endpoints, and the legacy endpoints remain only as a compatibility bridge.
 
 ### 5. AbuseIPDB categories require verbose mode
 
@@ -728,7 +724,7 @@ git push origin v1.2.0
 ### Good areas to contribute
 
 - New integrations: Shodan InternetDB, OTX, Censys, URLScan — see [Adding a New Integration](#adding-a-new-integration)
-- Frontend migration to manifest-driven rendering (eliminates the shim layer)
+- Retiring the legacy typed compatibility endpoints once downstream consumers no longer need them
 - Auth system implementation
 - Additional IOC types (URLs)
 - CLI improvements (coloured output, table formatting)
