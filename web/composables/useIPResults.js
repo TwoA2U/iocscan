@@ -8,6 +8,7 @@
 import {
     colVisible, fieldVisible,
 } from './useColumnVisibility.js';
+import { cachedAll, diagnosticsFromGeneric, stringArray } from './genericScanResultUtils.js';
 
 import { highlightJSON } from '../utils.js';
 
@@ -25,50 +26,6 @@ export const ipBulkCount  = ref(0);
 
 function isGenericIPResult(result) {
     return !!(result && typeof result === 'object' && result.ioc && result.iocType === 'ip' && result.results);
-}
-
-function stringArray(value) {
-    if (Array.isArray(value)) return value.filter(Boolean).map(String);
-    if (value && typeof value === 'object') return Object.values(value).filter(Boolean).map(String);
-    if (typeof value === 'string' && value) return [value];
-    return [];
-}
-
-function cachedAll(result) {
-    const cacheHits = result?.cacheHits || {};
-    const results = result?.results || {};
-    const errors = result?.errors || {};
-    const hitCount = Object.keys(cacheHits).filter(key => cacheHits[key]).length;
-    return hitCount > 0 && hitCount === Object.keys(results).length + Object.keys(errors).length;
-}
-
-function diagnosticsFromGeneric(result) {
-    const names = new Set([
-        ...Object.keys(result?.results || {}),
-        ...Object.keys(result?.errors || {}),
-        ...Object.keys(result?.cacheHits || {}),
-    ]);
-    if (!names.size) return null;
-
-    const out = {};
-    for (const name of names) {
-        const fields = result.results?.[name] || {};
-        let status = 'ok';
-        if (result.errors?.[name]) {
-            status = 'error';
-        } else if (typeof fields.queryStatus === 'string' && fields.queryStatus) {
-            status = fields.queryStatus;
-        } else if (fields.notObserved) {
-            status = 'not_observed';
-        }
-
-        out[name] = {
-            cache: result.cacheHits?.[name] ? 'hit' : 'live',
-            status,
-            error: result.errors?.[name] || '',
-        };
-    }
-    return out;
 }
 
 function adaptGenericIPResult(result) {

@@ -39,7 +39,7 @@ Query indicators against VirusTotal, AbuseIPDB, ThreatFox, ipapi.is, MalwareBaza
 - **Domain enrichment** — VirusTotal multi-engine verdict, reputation, registrar, creation date, A records, categories, and ThreatFox C2 intelligence
 - **Multi-signal risk scoring** — `riskLevel` computed from manifest-driven rules across all integrations; any single signal can escalate the level independently
 - **Plugin architecture** — each integration is a self-contained Go file implementing a single interface; adding a new vendor requires one file and one registry line
-- **Web UI** — Tailwind CSS + Vue 3, authenticated scanner, manifest-driven cards/table views, column visibility toggles, export to CSV/JSON, scan history, and per-vendor cache diagnostics. Cards show full vendor data including AbuseIPDB categories, VirusTotal last scanned time, and GreyNoise classification. Benign no-hit cards are hidden automatically — miss/error detail remains available in diagnostics and raw JSON
+- **Web UI** — Tailwind CSS + Vue 3, authenticated scanner, generic-endpoint-backed IP/hash/domain views, column visibility toggles, export to CSV/JSON, scan history, and per-vendor cache diagnostics. The current UI keeps its established per-mode layouts while adapting generic `ScanResult` payloads locally underneath
 - **Bulk scanning** — up to 100 IPs, hashes, or domains per request
 - **Local cache** — SQLite-backed caching per integration to avoid redundant API calls
 - **Rate limiting** — built-in token-bucket limiter with 1 MB request body cap
@@ -205,11 +205,48 @@ Protected API routes require an authenticated session cookie.
 
 ### `GET /api/integrations`
 
-Returns the full manifest for every registered integration. The frontend fetches this once at boot to drive card layouts, table columns, and risk thresholds.
+Returns the full manifest for every registered integration. The frontend fetches this at boot for integration metadata, settings labels, and ongoing manifest-driven migration work.
+
+### Generic scan endpoints used by the current web UI
+
+### `POST /api/scan/generic`
+
+Generic IP enrichment response. Returns per-entry wrappers around generic `ScanResult` payloads.
+
+```json
+{
+  "ip": "1.2.3.4",
+  "use_cache": true
+}
+```
+
+### `POST /api/scan/hash/generic`
+
+Generic hash enrichment response. Accepts up to 100 hashes (MD5, SHA1, or SHA256).
+
+```json
+{
+  "hashes": ["<hash1>", "<hash2>"],
+  "use_cache": true
+}
+```
+
+### `POST /api/scan/ioc/generic`
+
+Generic mixed/domain enrichment response. The current web UI uses this for domain scans.
+
+```json
+{
+  "iocs": ["1.2.3.4", "<sha256>", "evil.com"],
+  "use_cache": true
+}
+```
+
+### Legacy compatibility endpoints
 
 ### `POST /api/scan`
 
-IP enrichment. In normal web UI use, vendor API keys are loaded from the authenticated user's saved settings rather than sent in the request body.
+Legacy typed IP enrichment response. In normal web UI use, vendor API keys are loaded from the authenticated user's saved settings rather than sent in the request body.
 
 ```json
 {
@@ -220,7 +257,7 @@ IP enrichment. In normal web UI use, vendor API keys are loaded from the authent
 
 ### `POST /api/scan/hash`
 
-Hash enrichment. Accepts up to 100 hashes (MD5, SHA1, or SHA256).
+Legacy typed hash enrichment response. Accepts up to 100 hashes (MD5, SHA1, or SHA256).
 
 ```json
 {
@@ -231,7 +268,7 @@ Hash enrichment. Accepts up to 100 hashes (MD5, SHA1, or SHA256).
 
 ### `POST /api/scan/ioc`
 
-Mixed IOC enrichment. IPs, hashes, and domains are auto-detected and routed to the correct pipeline.
+Legacy typed mixed IOC enrichment response. IPs, hashes, and domains are auto-detected and routed to the correct pipeline.
 
 ```json
 {
@@ -246,7 +283,7 @@ Mixed IOC enrichment. IPs, hashes, and domains are auto-detected and routed to t
 { "table": "all" }
 ```
 
-Current cache tables: `VT_IP`, `ABUSE_IP`, `IPAPIIS_IP`, `GN_IP`, `VT_HASH`, `MB_HASH`, `TF_IP`, `TF_HASH`, `VT_DOMAIN`, `TF_DOMAIN`.
+Cache tables are defined by integration manifests and created automatically at startup. Use `"all"` to clear every registered integration cache table.
 
 ### Error responses
 
@@ -420,11 +457,12 @@ iocscan/
     ├── composables/
     │   ├── useAuth.js             — auth/session/page state + authenticated fetch wrapper
     │   ├── useColumnVisibility.js — column toggle state
-    │   ├── useDomainResults.js    — domain scan state, table, export
-    │   ├── useHashResults.js      — hash scan state, table, export
+    │   ├── genericScanResultUtils.js — shared helpers for adapting generic ScanResult payloads
+    │   ├── useDomainResults.js    — domain scan state, table, export, local generic-result adapter
+    │   ├── useHashResults.js      — hash scan state, table, export, local generic-result adapter
     │   ├── useIntegrations.js     — manifest fetch at boot
-    │   ├── useIOCScan.js          — central scan orchestration
-    │   ├── useIPResults.js        — IP scan state, table, export
+    │   ├── useIOCScan.js          — central scan orchestration + generic endpoint calls
+    │   ├── useIPResults.js        — IP scan state, table, export, local generic-result adapter
     │   └── useScanHistory.js      — scan history management
     ├── index.html                 — main UI entry point
     ├── main.js                    — Vue app bootstrap + loadManifests()
@@ -439,9 +477,9 @@ iocscan/
 
 | IOC Type | Backend | Frontend | Estimated time |
 |----------|:-------:|:--------:|----------------|
-| IP | 3 | 2 | ~2h |
-| Hash | 3 | 1 | ~1h 30m |
-| Domain | 2 | 1 | ~1h 15m |
+| IP | 2-3 | 1-2 | ~1h 30m to 2h |
+| Hash | 2-3 | 1 | ~1h to 1h 30m |
+| Domain | 2 | 1 | ~1h |
 
 **Backend files** (all integration types):
 
@@ -449,13 +487,13 @@ iocscan/
 |------|--------|
 | `integrations/yourvendor.go` | New file — fetch function, `Manifest()`, `Run()` |
 | `integrations/registry.go` | +1 line |
-| `utils/iputil_shim.go` or `utils/hashutil_shim.go` | +~10 lines mapping block (IP and hash only) |
+| `utils/iputil_shim.go` or `utils/hashutil_shim.go` | Optional compatibility mapping if legacy typed endpoints must expose the new vendor |
 
 **Frontend files** (required for all integration types):
 
 | File | Change |
 |------|--------|
-| `web/components/IOCScanner.js` | Generic scanner consumes manifests and generic `ScanResult`; new vendors should render automatically unless they need custom UX |
+| `web/components/IOCScanner.js` | Usually no change for diagnostics/raw JSON; richer vendor-specific cards or table presentation may still need explicit UI work |
 | `auth/models.go` / `auth/handlers.go` | Add encrypted per-user key storage fields if the vendor requires a new key |
 
 **Additional wiring for IP integrations that require a key** (e.g. GreyNoise):
@@ -466,7 +504,7 @@ iocscan/
 | `utils/iputil.go` | Add `yourvendorKey` field to `IPProcessor`, update `NewIPProcessor` signature |
 | `utils/iputil_shim.go` | Pass `keys["yourvendor"] = p.yourvendorKey` |
 
-> **Note:** The primary scanner now renders generic `ScanResult` data via integration manifests. Legacy typed scan endpoints remain available as a compatibility bridge while older clients transition.
+> **Note:** The primary scanner now calls generic scan endpoints and adapts generic `ScanResult` payloads locally inside the per-mode frontend composables. Legacy typed scan endpoints remain available as a compatibility bridge for older consumers.
 
 ### Step 1 — Create `integrations/yourvendor.go`
 
@@ -565,11 +603,13 @@ if f, ok := sr.Results["yourvendor"]; ok {
 
 Also add the `YVResult` struct and a `YourVendor *YVResult` field to `ComplexResult` in `utils/iputil.go`.
 
-> **Why is this step needed?** The scan orchestrator returns a generic `map[string]any` result. The IP and hash API responses use typed structs for backward compatibility with the frontend. This mapping block bridges them. This limitation will be removed in a future release — see [Known Limitations](#known-limitations).
+> **Why is this step needed?** The scan orchestrator returns generic `ScanResult` data. The legacy IP and hash API endpoints still use typed structs for backward compatibility with older consumers, so this mapping block only matters if you want the new vendor exposed through those older endpoints too.
 
-### Step 4 — Add the card to the frontend
+### Step 4 — Add or refine frontend presentation
 
-In `web/components/IOCScanner.js`, add a card inside the IP cards grid (before the `<!-- JSON panel -->` comment):
+The current scanner already reads generic results through per-mode adapters, so the minimum integration experience is usually available through diagnostics, raw JSON, and exports without extra work. Add explicit UI only when the new vendor deserves a richer card or table presentation.
+
+For example, in `web/components/IOCScanner.js`, add a card inside the IP cards grid:
 
 ```js
 <!-- Your Vendor card -->
@@ -638,7 +678,7 @@ keys["yourvendor"] = p.yourvendorKey
 
 ### 1. Legacy typed compatibility layer
 
-The primary web UI now consumes generic `ScanResult` payloads directly via integration manifests. Legacy endpoints still pass through compatibility shims (`iputil_shim.go`, `hashutil_shim.go`, `domainutil.go`) so older consumers can keep using the typed JSON response shapes during the transition.
+The primary web UI now calls generic endpoints and adapts `ScanResult` payloads locally per mode (`useIPResults.js`, `useHashResults.js`, `useDomainResults.js`). Legacy endpoints still pass through compatibility shims (`iputil_shim.go`, `hashutil_shim.go`, `domainutil.go`) so older consumers can keep using the typed JSON response shapes during the transition.
 
 ### 2. Hidden no-hit and error cards
 
@@ -650,7 +690,7 @@ Cache entries are shared at the application/database level, not isolated per use
 
 ### 4. Legacy endpoints still exist
 
-`/api/scan`, `/api/scan/hash`, and `/api/scan/ioc` still return backward-compatible typed result shapes (`ComplexResult`, `HashResult`, `DomainResult`) built from the generic orchestrator output. The current scanner UI uses the new generic endpoints, and the legacy endpoints remain only as a compatibility bridge.
+`/api/scan`, `/api/scan/hash`, and `/api/scan/ioc` still return backward-compatible typed result shapes (`ComplexResult`, `HashResult`, `DomainResult`) built from the generic orchestrator output. The current scanner UI uses `/api/scan/generic`, `/api/scan/hash/generic`, and `/api/scan/ioc/generic`; the legacy endpoints remain only as a compatibility bridge.
 
 ### 5. AbuseIPDB categories require verbose mode
 

@@ -6,6 +6,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { highlightJSON } from '../utils.js';
+import { cachedAll, diagnosticsFromGeneric, stringArray } from './genericScanResultUtils.js';
 
 const { ref, computed } = Vue;
 
@@ -24,43 +25,6 @@ export const domainView        = ref('cards');
 
 function isGenericDomainResult(result) {
     return !!(result && typeof result === 'object' && result.ioc && result.iocType === 'domain' && result.results);
-}
-
-function stringArray(value) {
-    if (Array.isArray(value)) return value.filter(Boolean).map(String);
-    if (value && typeof value === 'object') return Object.values(value).filter(Boolean).map(String);
-    if (typeof value === 'string' && value) return [value];
-    return [];
-}
-
-function cachedAll(result) {
-    const cacheHits = result?.cacheHits || {};
-    const results = result?.results || {};
-    const errors = result?.errors || {};
-    const hitCount = Object.keys(cacheHits).filter(key => cacheHits[key]).length;
-    return hitCount > 0 && hitCount === Object.keys(results).length + Object.keys(errors).length;
-}
-
-function diagnosticsFromGeneric(result) {
-    const names = new Set([
-        ...Object.keys(result?.results || {}),
-        ...Object.keys(result?.errors || {}),
-        ...Object.keys(result?.cacheHits || {}),
-    ]);
-    if (!names.size) return null;
-
-    const out = {};
-    for (const name of names) {
-        const fields = result.results?.[name] || {};
-        out[name] = {
-            cache: result.cacheHits?.[name] ? 'hit' : 'live',
-            status: result.errors?.[name]
-                ? 'error'
-                : (fields.queryStatus || 'ok'),
-            error: result.errors?.[name] || '',
-        };
-    }
-    return out;
 }
 
 function adaptGenericDomainResult(result) {

@@ -174,6 +174,20 @@ export default defineComponent({
             return !gn.notObserved;
         }
 
+        function hashChipLabel(entry) {
+            if (!entry) return '?';
+            const result = entry.result || entry;
+            const rawHash = result?.hash
+                || result?.ioc
+                || result?.virustotal?.sha256
+                || result?.virustotal?.sha1
+                || result?.virustotal?.md5
+                || entry.hash
+                || entry.ioc
+                || '?';
+            return rawHash.length > 14 ? `${rawHash.slice(0, 14)}...` : rawHash;
+        }
+
         return {
             // State
             currentUser, isAdmin,
@@ -203,7 +217,7 @@ export default defineComponent({
             goToSettings, goToAdmin, logoutNow,
             cacheHitLabels, hasCacheHits, diagnosticEntries,
             diagnosticCacheLabel, diagnosticCacheClass, diagnosticStatusLabel, diagnosticStatusClass,
-            hasThreatFoxHit, isThreatFoxMissStatus, showThreatFoxCard, showMalwareBazaarCard, showVirusTotalHashCard, showGreyNoiseCard,
+            hasThreatFoxHit, isThreatFoxMissStatus, showThreatFoxCard, showMalwareBazaarCard, showVirusTotalHashCard, showGreyNoiseCard, hashChipLabel,
             doIPScan, doHashScanAction,
             handleIPFileUpload, handleIPDrop, clearIPBulk,
             handleHashFileUpload, clearHashBulk,
@@ -742,7 +756,7 @@ export default defineComponent({
           <div v-for="(e,i) in allHashResults" :key="i"
                class="ip-tab" :class="{active: i===activeHashIdx}" @click="activeHashIdx=i">
             <span class="ip-tab-dot" :style="{background: riskDotColor((e.result||e).riskLevel)}"></span>
-            {{ ((e.result||e).virustotal?.sha256||(e.result||e).virustotal?.sha1||(e.result||e).virustotal?.md5||e.hash||'?').slice(0,14) }}…
+            {{ hashChipLabel(e) }}
           </div>
         </div>
 
@@ -758,7 +772,7 @@ export default defineComponent({
                    style="background:#15151c">
                 <div class="flex-1 min-w-0">
                   <div class="font-mono text-xs text-t1 break-all leading-relaxed mb-2">
-                    {{ (activeHashResult.virustotal&&(activeHashResult.virustotal.sha256||activeHashResult.virustotal.sha1||activeHashResult.virustotal.md5))||allHashResults[activeHashIdx]?.hash||'—' }}
+                    {{ (activeHashResult.virustotal&&(activeHashResult.virustotal.sha256||activeHashResult.virustotal.sha1||activeHashResult.virustotal.md5))||activeHashResult.hash||allHashResults[activeHashIdx]?.hash||allHashResults[activeHashIdx]?.ioc||'—' }}
                   </div>
                   <div class="flex flex-wrap gap-1.5">
                     <span v-if="activeHashResult.riskLevel" :class="['risk-pill','risk-'+activeHashResult.riskLevel]">
