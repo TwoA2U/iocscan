@@ -2,7 +2,7 @@ package integrations
 
 import "testing"
 
-func TestCacheTablesUniqueAndNonEmpty(t *testing.T) {
+func TestManifestDeclaredCacheTablesAreUniqueAndNonEmpty(t *testing.T) {
 	tables := CacheTables()
 	if len(tables) == 0 {
 		t.Fatal("expected at least one cache table")

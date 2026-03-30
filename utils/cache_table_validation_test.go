@@ -6,7 +6,7 @@ import (
 	"github.com/TwoA2U/iocscan/integrations"
 )
 
-func TestIsAllowedCacheTable(t *testing.T) {
+func TestCacheTableValidationAllowsRegisteredTablesAndRejectsUnsafeNames(t *testing.T) {
 	for _, table := range integrations.CacheTables() {
 		if !isAllowedCacheTable(table) {
 			t.Fatalf("expected registered cache table %q to be allowed", table)
