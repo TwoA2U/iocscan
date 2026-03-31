@@ -114,6 +114,11 @@ type FieldDef struct {
 	FalseLabel string `json:"falseLabel,omitempty"`
 	TrueColor  string `json:"trueColor,omitempty"`
 	FalseColor string `json:"falseColor,omitempty"`
+
+	// HideFalse skips rendering this bool field when the value is false.
+	// Useful for capability/flag style fields where only positive findings
+	// should appear in the generic card.
+	HideFalse bool `json:"hideFalse,omitempty"`
 }
 
 // ── Card Definition ───────────────────────────────────────────────────────────

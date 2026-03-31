@@ -7,12 +7,18 @@
 
 import {
     hashDynCols,
-} from './useColumnVisibility.js';
-import { cachedAll, diagnosticsFromGeneric, stringArray } from './genericScanResultUtils.js';
+} from './useColumnVisibility.js?v=12';
+import { buildFallbackIntegrationCards, cachedAll, diagnosticsFromGeneric, stringArray } from './genericScanResultUtils.js?v=12';
 
-import { highlightJSON } from '../utils.js';
+import { highlightJSON } from '../utils.js?v=12';
 
 const { ref, computed } = Vue;
+
+const CUSTOM_HASH_CARD_NAMES = new Set([
+    'virustotal_hash',
+    'malwarebazaar',
+    'threatfox_hash',
+]);
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -108,6 +114,11 @@ export const activeHashEntry  = computed(() => allHashResults.value[activeHashId
 export const activeHashResult = computed(() => {
     const raw = activeHashEntry.value?.result || activeHashEntry.value || null;
     return adaptGenericHashResult(raw);
+});
+
+export const activeHashFallbackCards = computed(() => {
+    const raw = activeHashEntry.value?.result || activeHashEntry.value || null;
+    return isGenericHashResult(raw) ? buildFallbackIntegrationCards(raw, 'hash', CUSTOM_HASH_CARD_NAMES) : [];
 });
 
 export const hashResultLinks = computed(() => {

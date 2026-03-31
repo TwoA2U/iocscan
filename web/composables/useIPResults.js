@@ -7,12 +7,20 @@
 
 import {
     colVisible, fieldVisible,
-} from './useColumnVisibility.js';
-import { cachedAll, diagnosticsFromGeneric, stringArray } from './genericScanResultUtils.js';
+} from './useColumnVisibility.js?v=12';
+import { buildFallbackIntegrationCards, cachedAll, diagnosticsFromGeneric, hasRenderableIntegrationCardData, stringArray } from './genericScanResultUtils.js?v=12';
+import { getManifest } from './useIntegrations.js?v=12';
 
-import { highlightJSON } from '../utils.js';
+import { highlightJSON } from '../utils.js?v=12';
 
 const { ref, computed } = Vue;
+
+const CUSTOM_IP_CARD_NAMES = new Set([
+    'abuseipdb',
+    'virustotal_ip',
+    'threatfox_ip',
+    'greynoise',
+]);
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -51,10 +59,30 @@ function adaptGenericIPResult(result) {
         geo: {
             isp: abuse.isp || ipapi.org || '',
             country: ipapi.country || abuse.countryCode || '',
-            countryCode: abuse.countryCode || '',
+            countryCode: ipapi.countryCode || abuse.countryCode || '',
             city: ipapi.city || '',
             state: ipapi.state || '',
             timezone: ipapi.timezone || '',
+            localTime: ipapi.localTime || '',
+            rir: ipapi.rir || '',
+            companyName: ipapi.companyName || '',
+            companyType: ipapi.companyType || '',
+            companyDomain: ipapi.companyDomain || '',
+            companyNetwork: ipapi.companyNetwork || '',
+            companyWhois: ipapi.companyWhois || '',
+            abuserScore: ipapi.abuserScore || '',
+            vpnService: ipapi.vpnService || '',
+            vpnType: ipapi.vpnType || '',
+            vpnLastSeen: ipapi.vpnLastSeen || '',
+            isBogon: !!ipapi.isBogon,
+            isMobile: !!ipapi.isMobile,
+            isSatellite: !!ipapi.isSatellite,
+            isCrawler: !!ipapi.isCrawler,
+            isDatacenter: !!ipapi.isDatacenter,
+            isTor: !!ipapi.isTor,
+            isProxy: !!ipapi.isProxy,
+            isVPN: !!ipapi.isVPN,
+            isAbuser: !!ipapi.isAbuser,
             isPublic: !!abuse.isPublic,
             isWhitelisted: !!abuse.isWhitelisted,
             hostnames: stringArray(abuse.hostnames),
@@ -120,6 +148,54 @@ export const activeResult      = computed(() => {
     const raw = activeResultEntry.value?.result || activeResultEntry.value || null;
     return adaptGenericIPResult(raw);
 });
+export const activeIPAPIManifestCard = computed(() => {
+    const raw = activeResultEntry.value?.result || activeResultEntry.value || null;
+    const manifest = getManifest('ipapi');
+    if (!manifest) return null;
+
+    const rawResult = isGenericIPResult(raw) ? (raw.results?.ipapi || null) : null;
+    const error = isGenericIPResult(raw) ? (raw.errors?.ipapi || '') : '';
+    const geo = activeResult.value?.geo || {};
+    const synthesizedResult = rawResult || {
+        country: geo.country || '',
+        city: geo.city || '',
+        state: geo.state || '',
+        timezone: geo.timezone || '',
+        localTime: geo.localTime || '',
+        org: geo.isp || '',
+        companyName: geo.companyName || '',
+        abuserScore: geo.abuserScore || '',
+        companyDomain: geo.companyDomain || '',
+        vpnService: geo.vpnService || '',
+        vpnType: geo.vpnType || '',
+        companyType: geo.companyType || '',
+        isVPN: !!geo.isVPN,
+        isProxy: !!geo.isProxy,
+        isTor: !!geo.isTor,
+        isDatacenter: !!geo.isDatacenter,
+        isCrawler: !!geo.isCrawler,
+        isAbuser: !!geo.isAbuser,
+        isBogon: !!geo.isBogon,
+        isMobile: !!geo.isMobile,
+        isSatellite: !!geo.isSatellite,
+    };
+
+    if (!hasRenderableIntegrationCardData(synthesizedResult, error)) return null;
+
+    return {
+        name: 'ipapi',
+        manifest,
+        ioc: raw?.ioc || activeResult.value?.ipAddress || activeResult.value?.ip || '',
+        result: synthesizedResult,
+        error,
+    };
+});
+export const activeIPFallbackCards = computed(() => {
+    const raw = activeResultEntry.value?.result || activeResultEntry.value || null;
+    return isGenericIPResult(raw)
+        ? buildFallbackIntegrationCards(raw, 'ip', new Set([...CUSTOM_IP_CARD_NAMES, 'ipapi']))
+        : [];
+});
 export const activeResultIP    = computed(() =>
     activeResultEntry.value?.ip ||
     activeResultEntry.value?.ioc ||
@@ -133,11 +209,27 @@ export const networkRows = computed(() => {
     if (!d) return [];
     const g = d.geo || {};
     return [
-        ['IP',          d.ipAddress || d.ip,                                  'net-ip'],
-        ['ISP',         g.isp || g.asn_org || '—',                            'net-isp'],
-        ['Country',     g.country || g.countryCode || '—',                    'net-country'],
-        ['City',        g.city || '—',                                        'net-city'],
-        ['Timezone',    g.timezone || '—',                                    'net-tz'],
+        ['IP',           d.ipAddress || d.ip,                                   'net-ip'],
+        ['ISP',          g.isp || g.asn_org || '—',                             'net-isp'],
+        ['Country',      g.country || g.countryCode || '—',                     'net-country'],
+        ['City',         g.city || '—',                                         'net-city'],
+        ['Timezone',     g.timezone || '—',                                     'net-tz'],
+        ['Local Time',   formatLocalTime(g.localTime),                          'net-localtime'],
+        ['Company',      g.companyName || '—',                                  'net-company'],
+        ['Company Type', g.companyType || '—',                                  'net-companytype'],
+        ['Company Domain', g.companyDomain || '—',                              'net-companydomain'],
+        ['Abuser Score', g.abuserScore || '—',                                  'net-abuserscore'],
+        ['VPN Service',  g.vpnService || '—',                                   'net-vpnservice'],
+        ['VPN Type',     g.vpnType || '—',                                      'net-vpntype'],
+        ['VPN',          trueOnlyBadge(g.isVPN, '#f87171'),                     'net-vpn'],
+        ['Proxy',        trueOnlyBadge(g.isProxy, '#fb923c'),                   'net-proxy'],
+        ['Tor',          trueOnlyBadge(g.isTor, '#f87171'),                     'net-tor'],
+        ['Datacenter',   trueOnlyBadge(g.isDatacenter, '#fb923c'),              'net-datacenter'],
+        ['Crawler',      trueOnlyBadge(g.isCrawler, '#fbbf24'),                 'net-crawler'],
+        ['Abuser',       trueOnlyBadge(g.isAbuser, '#f87171'),                  'net-abuser'],
+        ['Bogon',        trueOnlyBadge(g.isBogon, '#94a3b8'),                   'net-bogon'],
+        ['Mobile',       trueOnlyBadge(g.isMobile, '#60a5fa'),                  'net-mobile'],
+        ['Satellite',    trueOnlyBadge(g.isSatellite, '#c084fc'),               'net-satellite'],
         // Public, Whitelisted, Hostnames moved to AbuseIPDB card — they come from that API
     ].filter(([, v]) => v && v !== '—');
 });
@@ -354,3 +446,11 @@ function _fallbackCopy(text) {
 
 export function abuseColor(s) { return s >= 75 ? '#f87171' : s >= 40 ? '#fb923c' : s > 0 ? '#fbbf24' : '#34d399'; }
 export function yn(b)         { return b ? '✓ Yes' : '✗ No'; }
+function trueOnlyBadge(b, trueColor) {
+    if (!b) return '';
+    return `<span style="color:${trueColor};font-weight:600">✓ Yes</span>`;
+}
+function formatLocalTime(value) {
+    if (!value) return '—';
+    return String(value).replace('T', ' ').replace('+00:00', ' UTC');
+}

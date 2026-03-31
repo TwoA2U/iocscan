@@ -5,10 +5,15 @@
 // Uses Vue 3 GLOBAL build (window.Vue) — no bundler required.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { highlightJSON } from '../utils.js';
-import { cachedAll, diagnosticsFromGeneric, stringArray } from './genericScanResultUtils.js';
+import { highlightJSON } from '../utils.js?v=12';
+import { buildFallbackIntegrationCards, cachedAll, diagnosticsFromGeneric, stringArray } from './genericScanResultUtils.js?v=12';
 
 const { ref, computed } = Vue;
+
+const CUSTOM_DOMAIN_CARD_NAMES = new Set([
+    'virustotal_domain',
+    'threatfox_domain',
+]);
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -84,6 +89,11 @@ export const activeDomainEntry  = computed(() => allDomainResults.value[activeDo
 export const activeDomainResult = computed(() => {
     const raw = activeDomainEntry.value?.result || activeDomainEntry.value || null;
     return adaptGenericDomainResult(raw);
+});
+
+export const activeDomainFallbackCards = computed(() => {
+    const raw = activeDomainEntry.value?.result || activeDomainEntry.value || null;
+    return isGenericDomainResult(raw) ? buildFallbackIntegrationCards(raw, 'domain', CUSTOM_DOMAIN_CARD_NAMES) : [];
 });
 
 export const domainResultLinks = computed(() => {

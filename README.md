@@ -40,7 +40,7 @@ Query indicators against VirusTotal, AbuseIPDB, ThreatFox, ipapi.is, MalwareBaza
 - **Domain enrichment** — VirusTotal multi-engine verdict, reputation, registrar, creation date, A records, categories, and ThreatFox C2 intelligence
 - **Multi-signal risk scoring** — `riskLevel` computed from manifest-driven rules across all integrations; any single signal can escalate the level independently
 - **Plugin architecture** — each integration is a self-contained Go file implementing a single interface; adding a new vendor requires one file and one registry line
-- **Web UI** — Tailwind CSS + Vue 3, authenticated scanner, generic-endpoint-backed IP/hash/domain views, column visibility toggles, export to CSV/JSON, scan history, and per-vendor cache diagnostics. The current UI keeps its established per-mode layouts while adapting generic `ScanResult` payloads locally underneath
+- **Web UI** — Tailwind CSS + Vue 3, authenticated scanner, generic-endpoint-backed IP/hash/domain views, column visibility toggles, export to CSV/JSON, scan history, and per-vendor cache diagnostics. The current UI keeps its established per-mode layouts while adapting generic `ScanResult` payloads locally underneath, with richer custom cards for key vendors and manifest-driven fallback cards for simple or newly added integrations
 - **Bulk scanning** — up to 100 IPs, hashes, or domains per request
 - **Local cache** — SQLite-backed caching per integration to avoid redundant API calls
 - **Rate limiting** — built-in token-bucket limiter with 1 MB request body cap
@@ -169,7 +169,7 @@ The `-p` flag always overrides the config file port.
 | Feature | Description |
 |---------|-------------|
 | Authenticated UI | Login page, per-user session, admin user management, settings page |
-| Cards view | Per-indicator detail cards with risk badges and source links. Benign no-hit cards are hidden; diagnostics and raw JSON still show miss/error detail |
+| Cards view | Per-indicator detail cards with risk badges and source links. Core vendors keep handcrafted cards where richer presentation helps, while integrations without custom UI can render automatically through manifest-driven fallback cards. Benign no-hit cards are hidden; diagnostics and raw JSON still show miss/error detail |
 | Table view | Sortable multi-indicator comparison table |
 | Column toggles | Show/hide individual fields per section |
 | Bulk input | Paste multiple indicators or upload a `.txt` / `.csv` file |
@@ -412,6 +412,7 @@ iocscan/
     ├── components/
     │   ├── AdminPage.js           — admin user management UI
     │   ├── ColumnDrawer.js        — column visibility drawer
+    │   ├── IntegrationCard.js     — generic manifest-driven fallback card renderer
     │   ├── LoginPage.js           — login form
     │   ├── IOCScanner.js          — main scanner (IP, Hash, Domain tabs)
     │   ├── SettingsPage.js        — password change + API key management
@@ -419,12 +420,12 @@ iocscan/
     ├── composables/
     │   ├── useAuth.js             — auth/session/page state + authenticated fetch wrapper
     │   ├── useColumnVisibility.js — column toggle state
-    │   ├── genericScanResultUtils.js — shared helpers for adapting generic ScanResult payloads
-    │   ├── useDomainResults.js    — domain scan state, table, export, local generic-result adapter
-    │   ├── useHashResults.js      — hash scan state, table, export, local generic-result adapter
+    │   ├── genericScanResultUtils.js — shared helpers for adapting generic ScanResult payloads and building manifest fallback cards
+    │   ├── useDomainResults.js    — domain scan state, table, export, local generic-result adapter + fallback card view model
+    │   ├── useHashResults.js      — hash scan state, table, export, local generic-result adapter + fallback card view model
     │   ├── useIntegrations.js     — manifest fetch at boot
     │   ├── useIOCScan.js          — central scan orchestration + generic endpoint calls
-    │   ├── useIPResults.js        — IP scan state, table, export, local generic-result adapter
+    │   ├── useIPResults.js        — IP scan state, table, export, local generic-result adapter + fallback card view model
     │   └── useScanHistory.js      — scan history management
     ├── index.html                 — main UI entry point
     ├── main.js                    — Vue app bootstrap + loadManifests()
@@ -454,7 +455,7 @@ iocscan/
 
 | File | Change |
 |------|--------|
-| `web/components/IOCScanner.js` | Usually no change for diagnostics/raw JSON; richer vendor-specific cards or table presentation may still need explicit UI work |
+| `web/components/IOCScanner.js` | Usually no change. Simple integrations can render automatically through manifest-driven fallback cards; only richer vendor-specific cards or bespoke table presentation still need explicit UI work |
 | `auth/models.go` / `auth/handlers.go` | Add encrypted per-user key storage fields if the vendor requires a new key |
 
 **Additional wiring for IP integrations that require a key** (e.g. GreyNoise):
@@ -463,7 +464,7 @@ iocscan/
 |------|--------|
 | `server/server.go` | Load the stored key and pass it into the generic scan path |
 
-> **Note:** The primary scanner calls generic scan endpoints and adapts generic `ScanResult` payloads locally inside the per-mode frontend composables.
+> **Note:** The primary scanner calls generic scan endpoints and adapts generic `ScanResult` payloads locally inside the per-mode frontend composables. If an integration has no handwritten card in `IOCScanner.js`, the frontend can still render it through `IntegrationCard.js` using the manifest card definition.
 
 ### Step 1 — Create `integrations/yourvendor.go`
 

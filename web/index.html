@@ -254,20 +254,25 @@
     }
 
     /* KV rows */
-    .kv {
+    .kv,
+    .kv-row {
       display: flex; justify-content: space-between; align-items: baseline;
       padding: 6px 13px; gap: 12px;
       border-bottom: 1px solid rgba(255,255,255,0.05);
       transition: background 0.1s;
     }
-    .kv:last-child { border-bottom: none; }
-    .kv:hover { background: rgba(255,255,255,0.02); }
+    .kv:last-child,
+    .kv-row:last-child { border-bottom: none; }
+    .kv:hover,
+    .kv-row:hover { background: rgba(255,255,255,0.02); }
     .kv-key {
-      font-size: 0.66rem; font-weight: 500; color: #9ca3b0; flex-shrink: 0;
+      font-size: 0.66rem; font-weight: 500; color: #9ca3b0; flex: 0 0 auto;
+      min-width: 78px;
     }
     .kv-val {
       font-family: 'JetBrains Mono', monospace;
-      font-size: 0.7rem; color: #f0f1f5; text-align: right; word-break: break-all;
+      font-size: 0.7rem; color: #f0f1f5; text-align: right; word-break: break-word;
+      margin-left: auto; max-width: 68%;
     }
 
     .diag-panel {
@@ -403,12 +408,12 @@
     .vt-pill.mal { color: var(--r0); border-color: rgba(252,129,129,0.25); background: var(--r0a); }
     .vt-pill.sus { color: var(--r2); border-color: rgba(252,211,77,0.25);  background: var(--r2a); }
     .vt-pill.ok  { color: var(--r4); border-color: rgba(74,222,128,0.25);  background: var(--r4a); }
-    .vt-pill.unk { color: #565e6e;   border-color: rgba(255,255,255,0.08); }
+    .vt-pill.unk { color: #93c5fd;   border-color: rgba(147,197,253,0.28); background: rgba(59,130,246,0.10); }
     .vt-badge { font-size: 0.6rem; padding: 2px 9px; border: 1px solid; font-weight: 600; border-radius: 6px; }
     .vt-badge.mal { color: var(--r0); border-color: rgba(252,129,129,0.25); background: var(--r0a); }
     .vt-badge.sus { color: var(--r2); border-color: rgba(252,211,77,0.25);  background: var(--r2a); }
     .vt-badge.ok  { color: var(--r4); border-color: rgba(74,222,128,0.25);  background: var(--r4a); }
-    .vt-badge.unk { color: #565e6e;   border-color: rgba(255,255,255,0.08); }
+    .vt-badge.unk { color: #93c5fd;   border-color: rgba(147,197,253,0.28); background: rgba(59,130,246,0.10); }
 
     /* Risk pills */
     .risk-pill {
@@ -995,6 +1000,6 @@
 </head>
 <body>
 <div id="app"></div>
-<script type="module" src="main.js?v=11"></script>
+<script type="module" src="main.js?v=12"></script>
 </body>
 </html>

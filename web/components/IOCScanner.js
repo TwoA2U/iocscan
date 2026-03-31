@@ -5,15 +5,16 @@
 // preserving every element from the original index.html.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import ColumnDrawer from './ColumnDrawer.js';
-import ResultsTable from './ResultsTable.js';
+import ColumnDrawer from './ColumnDrawer.js?v=12';
+import ResultsTable from './ResultsTable.js?v=12';
+import IntegrationCard from './IntegrationCard.js?v=12';
 import {
     currentUser,
     isAdmin,
     goToSettings,
     goToAdmin,
     logout,
-} from '../composables/useAuth.js';
+} from '../composables/useAuth.js?v=12';
 
 import {
     // State
@@ -30,8 +31,8 @@ import {
     colVisible, fieldVisible,
     // Computed
     colBadge,
-    activeResultEntry, activeResultIP, activeResult,
-    activeHashEntry, activeHashResult,
+    activeResultEntry, activeResultIP, activeResult, activeIPAPIManifestCard, activeIPFallbackCards,
+    activeHashEntry, activeHashResult, activeHashFallbackCards,
     hashResultLinks, signerDetailObj, signerIsRevoked, signerIsInvalid, signerIsValid, vtNotFound,
     networkRows, highlightedJSON, highlightedHashJSON,
     visibleTableCols, sortedTableRows,
@@ -51,13 +52,14 @@ import {
     sortTable, renderTableCell, sortHashTable, renderHashTableCell,
     // Domain
     allDomainResults, activeDomainIdx, activeDomainResult, activeDomainEntry,
+    activeDomainFallbackCards,
     domainError, isDomainLoading, domainBulkCount, domainInputText, domainUseCache,
     domainView, domainResultLinks, highlightedDomainJSON,
     visibleDomainTableCols, sortedDomainRows, domainSortCol, domainSortAsc,
     sortDomainTable, renderDomainTableCell,
     copyDomainJSON, exportDomainCSV, exportDomainJSON,
     doDomainScan, setDomainView, clearDomainBulk, handleDomainFileUpload,
-} from '../composables/useIOCScan.js';
+} from '../composables/useIOCScan.js?v=12';
 
 const { defineComponent } = Vue;
 const CACHE_SOURCE_LABELS = {
@@ -76,7 +78,7 @@ const CACHE_SOURCE_LABELS = {
 
 export default defineComponent({
     name: 'IOCScanner',
-    components: { ColumnDrawer, ResultsTable },
+    components: { ColumnDrawer, ResultsTable, IntegrationCard },
 
     setup() {
         async function logoutNow() {
@@ -203,8 +205,8 @@ export default defineComponent({
             colVisible, fieldVisible,
             // Computed
             colBadge,
-            activeResultEntry, activeResultIP, activeResult,
-            activeHashEntry, activeHashResult,
+            activeResultEntry, activeResultIP, activeResult, activeIPAPIManifestCard, activeIPFallbackCards,
+            activeHashEntry, activeHashResult, activeHashFallbackCards,
             hashResultLinks, signerDetailObj, signerIsRevoked, signerIsInvalid, signerIsValid, vtNotFound,
             networkRows, highlightedJSON, highlightedHashJSON,
             visibleTableCols, sortedTableRows,
@@ -228,6 +230,7 @@ export default defineComponent({
             sortTable, renderTableCell, sortHashTable, renderHashTableCell,
             // Domain
             allDomainResults, activeDomainIdx, activeDomainResult, activeDomainEntry,
+            activeDomainFallbackCards,
             domainError, isDomainLoading, domainBulkCount, domainInputText, domainUseCache,
             domainView, domainResultLinks, highlightedDomainJSON,
             visibleDomainTableCols, sortedDomainRows, domainSortCol, domainSortAsc,
@@ -445,19 +448,23 @@ export default defineComponent({
             <!-- Cards grid -->
             <div class="grid gap-3 mb-4" style="grid-template-columns:repeat(auto-fill,minmax(290px,1fr))">
 
-              <!-- Network -->
-              <div v-if="colVisible.network && networkRows.length" class="vcard animate-fade-up">
-                <div class="vcard-head">
-                  <span class="vcard-title">🌍 Network</span>
-                  <a :href="'https://api.ipapi.is/?q='+activeResultIP" target="_blank" rel="noopener" class="vcard-link">↗ ipapi.is</a>
-                </div>
-                <div class="vcard-body">
-                  <div v-for="[k,v,fkey] in networkRows" :key="k" class="kv" :data-field="fkey" v-show="!fkey||fieldVisible[fkey]">
-                    <span class="kv-key">{{ k }}</span>
-                    <span class="kv-val" v-html="v"></span>
-                  </div>
-                </div>
-              </div>
+              <integration-card
+                v-if="activeIPAPIManifestCard"
+                :key="'ip-generic-ipapi'"
+                :manifest="activeIPAPIManifestCard.manifest"
+                :result="activeIPAPIManifestCard.result"
+                :ioc="activeIPAPIManifestCard.ioc"
+                :error="activeIPAPIManifestCard.error"
+              ></integration-card>
+
+              <integration-card
+                v-for="card in activeIPFallbackCards"
+                :key="'ip-generic-'+card.name"
+                :manifest="card.manifest"
+                :result="card.result"
+                :ioc="card.ioc"
+                :error="card.error"
+              ></integration-card>
 
               <!-- AbuseIPDB -->
               <div v-if="colVisible.abuse && activeResult.abuseipdb && activeResult.abuseipdb.confidenceScore!=null && !activeResult.abuseipdb.error"
@@ -542,15 +549,11 @@ export default defineComponent({
                   <a :href="'https://www.virustotal.com/gui/ip-address/'+activeResultIP" target="_blank" rel="noopener" class="vcard-link">↗ VirusTotal</a>
                 </div>
                 <div class="vcard-body">
-                  <div class="kv" v-show="fieldVisible['vt-summary']">
-                    <span class="kv-key">S / U / H</span>
-                    <span class="kv-val">{{ activeResult.virustotal ? (activeResult.virustotal.suspicious??0)+' / '+(activeResult.virustotal.undetected??0)+' / '+(activeResult.virustotal.harmless??0) : '—' }}</span>
-                  </div>
                   <div class="vt-pills">
                     <span v-show="fieldVisible['vt-malicious']"  class="vt-pill mal">Malicious · {{ activeResult.virustotal.malicious }}</span>
                     <span v-show="fieldVisible['vt-suspicious']" class="vt-pill sus">Suspicious · {{ activeResult.virustotal.suspicious??0 }}</span>
                     <span v-show="fieldVisible['vt-harmless']"   class="vt-pill ok">Harmless · {{ vtStatPart(2) }}</span>
-                    <span v-show="fieldVisible['vt-undetected']" class="vt-pill unk">Undetected · {{ vtStatPart(1) }}</span>
+                    <span v-show="fieldVisible['vt-undetected']" class="vt-pill unk">Undetected · {{ activeResult.virustotal.undetected??0 }}</span>
                   </div>
                   <div v-if="activeResult.virustotal.lastAnalysisDate"
                        class="kv border-t border-white/6 px-3 py-2">
@@ -995,6 +998,19 @@ export default defineComponent({
 
               </div><!-- /sub-grid -->
 
+              <div v-if="activeHashFallbackCards.length"
+                   class="grid gap-3 px-4 pb-4"
+                   style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr))">
+                <integration-card
+                  v-for="card in activeHashFallbackCards"
+                  :key="'hash-generic-'+card.name"
+                  :manifest="card.manifest"
+                  :result="card.result"
+                  :ioc="card.ioc"
+                  :error="card.error"
+                ></integration-card>
+              </div>
+
               <!-- JSON panel -->
               <div class="px-4 pb-4">
                 <div class="json-panel">
@@ -1138,33 +1154,29 @@ export default defineComponent({
                 </div>
                 <div class="vcard-body">
                   <template v-if="!activeDomainResult.vtDomain.error">
-                    <div class="kv-row">
-                      <span class="kv-key">S / U / H</span>
-                      <span class="kv-val">{{ (activeDomainResult.vtDomain.suspicious||0)+' / '+(activeDomainResult.vtDomain.undetected||0)+' / '+(activeDomainResult.vtDomain.harmless||0) }}</span>
-                    </div>
-                    <div class="vt-pills" style="padding:8px 0 4px">
+                    <div class="vt-pills" style="padding:8px 13px 4px">
                       <span class="vt-pill mal">Malicious · {{ activeDomainResult.vtDomain.malicious }}</span>
                       <span class="vt-pill sus">Suspicious · {{ activeDomainResult.vtDomain.suspicious||0 }}</span>
                       <span class="vt-pill ok">Harmless · {{ activeDomainResult.vtDomain.harmless||0 }}</span>
                       <span class="vt-pill unk">Undetected · {{ activeDomainResult.vtDomain.undetected||0 }}</span>
                     </div>
-                    <div v-if="activeDomainResult.vtDomain.suggestedThreatLabel" class="kv-row">
+                    <div v-if="activeDomainResult.vtDomain.suggestedThreatLabel" class="kv">
                       <span class="kv-key">Threat</span>
                       <span class="kv-val" style="color:var(--r0)">{{ activeDomainResult.vtDomain.suggestedThreatLabel }}</span>
                     </div>
-                    <div v-if="activeDomainResult.vtDomain.reputation != null" class="kv-row">
+                    <div v-if="activeDomainResult.vtDomain.reputation != null" class="kv">
                       <span class="kv-key">Reputation</span>
                       <span class="kv-val font-bold" :style="{color: activeDomainResult.vtDomain.reputation<0?'var(--r0)':activeDomainResult.vtDomain.reputation>0?'var(--r4)':'var(--t3)'}">
                         {{ activeDomainResult.vtDomain.reputation>0?'+':'' }}{{ activeDomainResult.vtDomain.reputation }}
                       </span>
                     </div>
-                    <div v-if="activeDomainResult.vtDomain.registrar" class="kv-row">
+                    <div v-if="activeDomainResult.vtDomain.registrar" class="kv">
                       <span class="kv-key">Registrar</span><span class="kv-val">{{ activeDomainResult.vtDomain.registrar }}</span>
                     </div>
-                    <div v-if="activeDomainResult.vtDomain.creationDate" class="kv-row">
+                    <div v-if="activeDomainResult.vtDomain.creationDate" class="kv">
                       <span class="kv-key">Created</span><span class="kv-val">{{ activeDomainResult.vtDomain.creationDate }}</span>
                     </div>
-                    <div v-if="activeDomainResult.vtDomain.aRecords && activeDomainResult.vtDomain.aRecords.length" class="kv-row" style="align-items:flex-start">
+                    <div v-if="activeDomainResult.vtDomain.aRecords && activeDomainResult.vtDomain.aRecords.length" class="kv" style="align-items:flex-start">
                       <span class="kv-key" style="padding-top:2px">A Records</span>
                       <span class="kv-val" style="font-size:0.65rem">{{ activeDomainResult.vtDomain.aRecords.join(', ') }}</span>
                     </div>
@@ -1178,7 +1190,7 @@ export default defineComponent({
                       </div>
                     </div>
                   </template>
-                  <div v-else class="kv-row"><span class="kv-val text-t3 italic text-xs">{{ activeDomainResult.vtDomain.error }}</span></div>
+                  <div v-else class="kv"><span class="kv-val text-t3 italic text-xs">{{ activeDomainResult.vtDomain.error }}</span></div>
                 </div>
               </div>
 
@@ -1195,23 +1207,23 @@ export default defineComponent({
                 </div>
                 <div class="vcard-body">
                   <template v-if="activeDomainResult.threatfox.queryStatus==='ok'">
-                    <div v-if="activeDomainResult.threatfox.malware" class="kv-row">
+                    <div v-if="activeDomainResult.threatfox.malware" class="kv">
                       <span class="kv-key">Malware</span>
                       <span class="kv-val font-bold" style="color:var(--r0)">{{ activeDomainResult.threatfox.malware }}</span>
                     </div>
-                    <div v-if="activeDomainResult.threatfox.threatType" class="kv-row">
+                    <div v-if="activeDomainResult.threatfox.threatType" class="kv">
                       <span class="kv-key">Threat Type</span><span class="kv-val">{{ activeDomainResult.threatfox.threatType }}</span>
                     </div>
-                    <div v-if="activeDomainResult.threatfox.confidenceLevel != null" class="kv-row">
+                    <div v-if="activeDomainResult.threatfox.confidenceLevel != null" class="kv">
                       <span class="kv-key">Confidence</span>
                       <span class="kv-val font-bold" :style="{color: activeDomainResult.threatfox.confidenceLevel>=75?'var(--r0)':activeDomainResult.threatfox.confidenceLevel>=50?'var(--r1)':'var(--r2)'}">
                         {{ activeDomainResult.threatfox.confidenceLevel }}%
                       </span>
                     </div>
-                    <div v-if="activeDomainResult.threatfox.firstSeen" class="kv-row">
+                    <div v-if="activeDomainResult.threatfox.firstSeen" class="kv">
                       <span class="kv-key">First Seen</span><span class="kv-val">{{ activeDomainResult.threatfox.firstSeen }}</span>
                     </div>
-                    <div v-if="activeDomainResult.threatfox.reporter" class="kv-row">
+                    <div v-if="activeDomainResult.threatfox.reporter" class="kv">
                       <span class="kv-key">Reporter</span><span class="kv-val">{{ activeDomainResult.threatfox.reporter }}</span>
                     </div>
                     <div v-if="activeDomainResult.threatfox.tags && activeDomainResult.threatfox.tags.length"
@@ -1219,7 +1231,7 @@ export default defineComponent({
                       <span v-for="tag in activeDomainResult.threatfox.tags" :key="tag" class="hash-tag">{{ tag }}</span>
                     </div>
                   </template>
-                  <div v-if="activeDomainResult.threatfox.queryStatus !== 'ok'" class="kv-row">
+                  <div v-if="activeDomainResult.threatfox.queryStatus !== 'ok'" class="kv">
                     <span class="kv-val text-t3 italic text-xs">
                       {{ isThreatFoxMissStatus(activeDomainResult.threatfox.queryStatus) ? 'No ThreatFox intelligence for this domain.' : activeDomainResult.threatfox.queryStatus }}
                     </span>
@@ -1228,6 +1240,19 @@ export default defineComponent({
               </div>
 
             </div><!-- /cards grid -->
+
+            <div v-if="activeDomainFallbackCards.length"
+                 class="grid gap-3 mb-4"
+                 style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr))">
+              <integration-card
+                v-for="card in activeDomainFallbackCards"
+                :key="'domain-generic-'+card.name"
+                :manifest="card.manifest"
+                :result="card.result"
+                :ioc="card.ioc"
+                :error="card.error"
+              ></integration-card>
+            </div>
 
             <div class="json-panel animate-fade-up">
               <button class="float-right mb-2 px-2.5 py-0.5 border border-white/10 rounded text-t3 font-mono text-xs tracking-widest transition-all hover:border-prime/40 hover:text-prime"

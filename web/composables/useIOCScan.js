@@ -5,9 +5,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Namespace imports for functions we wrap (avoids redeclaration errors) ─────
-import * as IPResults   from './useIPResults.js';
-import * as HashResults   from './useHashResults.js';
-import * as DomainResults from './useDomainResults.js';
+import * as IPResults   from './useIPResults.js?v=12';
+import * as HashResults   from './useHashResults.js?v=12';
+import * as DomainResults from './useDomainResults.js?v=12';
 
 import {
     colVisible, fieldVisible,
@@ -18,14 +18,14 @@ import {
     toggleHashCol, toggleHashSection, setAllCols,
     makeColBadge, makeIpDrawerSections, makeHashDrawerSections,
     HASH_COL_LABELS, HASH_COL_ORDER, HASH_COL_HIDDEN_DEFAULT,
-} from './useColumnVisibility.js';
+} from './useColumnVisibility.js?v=12';
 
 import {
     scanHist,
     addHist, clearHistory, reScan,
     registerReScan,
-} from './useScanHistory.js';
-import { apiFetch } from './useAuth.js';
+} from './useScanHistory.js?v=12';
+import { apiFetch } from './useAuth.js?v=12';
 
 const { ref, reactive, computed, watch, nextTick } = Vue;
 
@@ -94,6 +94,8 @@ export const ipBulkCount       = IPResults.ipBulkCount;
 export const activeResultEntry = IPResults.activeResultEntry;
 export const activeResultIP    = IPResults.activeResultIP;
 export const activeResult      = IPResults.activeResult;
+export const activeIPAPIManifestCard = IPResults.activeIPAPIManifestCard;
+export const activeIPFallbackCards = IPResults.activeIPFallbackCards;
 export const networkRows       = IPResults.networkRows;
 export const highlightedJSON   = IPResults.highlightedJSON;
 export const TABLE_COLS        = IPResults.TABLE_COLS;
@@ -118,6 +120,7 @@ export const hashError         = HashResults.hashError;
 export const hashBulkCount     = HashResults.hashBulkCount;
 export const activeHashEntry   = HashResults.activeHashEntry;
 export const activeHashResult  = HashResults.activeHashResult;
+export const activeHashFallbackCards = HashResults.activeHashFallbackCards;
 export const hashResultLinks   = HashResults.hashResultLinks;
 export const signerDetailObj   = HashResults.signerDetailObj;
 export const signerIsRevoked   = HashResults.signerIsRevoked;
@@ -147,6 +150,7 @@ export const domainUseCache        = DomainResults.domainUseCache;
 export const domainView            = DomainResults.domainView;
 export const activeDomainEntry     = DomainResults.activeDomainEntry;
 export const activeDomainResult    = DomainResults.activeDomainResult;
+export const activeDomainFallbackCards = DomainResults.activeDomainFallbackCards;
 export const domainResultLinks     = DomainResults.domainResultLinks;
 export const highlightedDomainJSON = DomainResults.highlightedDomainJSON;
 export const visibleDomainTableCols = DomainResults.visibleDomainTableCols;

@@ -10,12 +10,12 @@ import {
     hashDynCols,
     toggleCol, toggleSection, toggleField,
     toggleHashCol, toggleHashSection, setAllCols,
-} from '../composables/useColumnVisibility.js';
+} from '../composables/useColumnVisibility.js?v=12';
 
 import {
     currentIOCMode, colBadge, ipDrawerSections, hashDrawerSections,
     colDrawerOpen, openColDrawer, closeColDrawer,
-} from '../composables/useIOCScan.js';
+} from '../composables/useIOCScan.js?v=12';
 
 const { defineComponent } = Vue;
 

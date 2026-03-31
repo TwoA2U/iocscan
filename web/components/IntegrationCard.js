@@ -18,7 +18,7 @@
 // Uses CSS variables from index.html :root block — no external stylesheet.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { scoreBarColor, badgeColor, buildLinkUrl } from '../composables/useIntegrations.js';
+import { scoreBarColor, badgeColor, buildLinkUrl } from '../composables/useIntegrations.js?v=12';
 
 const { defineComponent, computed } = Vue;
 
@@ -47,6 +47,7 @@ export default defineComponent({
             return fields.filter(field => {
                 const val = props.result[field.key];
                 if (val === null || val === undefined) return false;
+                if (field.type === 'bool' && field.hideFalse && !val) return false;
                 if (typeof val === 'string'  && val === '') return false;
                 if (Array.isArray(val) && val.length === 0) return false;
                 return true;
@@ -105,7 +106,7 @@ export default defineComponent({
   <!-- ── Card header ───────────────────────────────────────────────────── -->
   <div class="card-head">
     <span class="card-head-left">
-      {{ manifest.icon }} {{ manifest.card.title }}
+      {{ manifest.card?.title || ((manifest.icon ? manifest.icon + ' ' : '') + (manifest.label || manifest.name || 'Integration')) }}
     </span>
     <a v-if="headerLink && !error"
        :href="headerLink"

@@ -2,6 +2,8 @@
 // Shared helpers for adapting generic ScanResult payloads into the
 // legacy-shaped frontend view models the current scanner UI expects.
 
+import { getManifestsForIOCType } from './useIntegrations.js?v=12';
+
 export function stringArray(value) {
     if (Array.isArray(value)) return value.filter(Boolean).map(String);
     if (value && typeof value === 'object') return Object.values(value).filter(Boolean).map(String);
@@ -44,4 +46,37 @@ export function diagnosticsFromGeneric(result) {
         };
     }
     return out;
+}
+
+export function hasRenderableIntegrationCardData(result, error = '') {
+    if (error) return true;
+    if (!result || typeof result !== 'object') return false;
+
+    return Object.values(result).some(value => {
+        if (value == null) return false;
+        if (typeof value === 'string') return value !== '';
+        if (Array.isArray(value)) return value.length > 0;
+        return true;
+    });
+}
+
+export function buildFallbackIntegrationCards(rawResult, iocType, excludedNames = []) {
+    if (!rawResult || typeof rawResult !== 'object' || rawResult.iocType !== iocType || !rawResult.results) {
+        return [];
+    }
+
+    const excluded = excludedNames instanceof Set ? excludedNames : new Set(excludedNames);
+    const results = rawResult.results || {};
+    const errors = rawResult.errors || {};
+
+    return getManifestsForIOCType(iocType)
+        .filter(manifest => !excluded.has(manifest.name))
+        .map(manifest => ({
+            name: manifest.name,
+            manifest,
+            ioc: rawResult.ioc || '',
+            result: results[manifest.name] || null,
+            error: errors[manifest.name] || '',
+        }))
+        .filter(card => hasRenderableIntegrationCardData(card.result, card.error));
 }

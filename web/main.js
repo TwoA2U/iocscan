@@ -5,7 +5,7 @@
 // and surfaced in-page instead of leaving a blank screen.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { loadManifests } from './composables/useIntegrations.js?v=11';
+import { loadManifests } from './composables/useIntegrations.js?v=12';
 
 const { createApp } = Vue;
 
@@ -33,7 +33,7 @@ window.addEventListener('unhandledrejection', event => {
 
 async function boot() {
     try {
-        const mod = await import('./components/AppShell.js?v=11');
+        const mod = await import('./components/AppShell.js?v=12');
         const app = createApp(mod.default);
         app.config.errorHandler = (err) => {
             console.error(err);

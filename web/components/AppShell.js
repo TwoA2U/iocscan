@@ -1,7 +1,7 @@
-import IOCScanner from './IOCScanner.js';
-import LoginPage from './LoginPage.js';
-import SettingsPage from './SettingsPage.js';
-import AdminPage from './AdminPage.js';
+import IOCScanner from './IOCScanner.js?v=12';
+import LoginPage from './LoginPage.js?v=12';
+import SettingsPage from './SettingsPage.js?v=12';
+import AdminPage from './AdminPage.js?v=12';
 
 import {
     authReady,
@@ -9,7 +9,7 @@ import {
     currentPage,
     mustChangePw,
     checkSession,
-} from '../composables/useAuth.js';
+} from '../composables/useAuth.js?v=12';
 
 const { defineComponent, computed, onMounted, h } = Vue;
 

@@ -17,3 +17,6 @@ iocscan.exe
 .idea/
 .vscode/
 *.swp
+
+# go cache
+.gocache/
