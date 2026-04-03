@@ -3,10 +3,9 @@ import {
     goToScanner,
     logout,
     isAdmin,
-} from '../composables/useAuth.js';
-
-import { apiFetch } from '../composables/useAuth.js';
-import { resetScanState } from '../composables/useIOCScan.js';
+    apiFetch,
+} from '../composables/useAuth.js?v=12';
+import { resetScanState } from '../composables/useIOCScan.js?v=12';
 
 const { defineComponent, ref, reactive, onMounted } = Vue;
 

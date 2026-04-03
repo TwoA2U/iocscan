@@ -15,7 +15,7 @@ import {
     hashSortCol, hashSortAsc,
     riskDotColor, formatBytes, toArr,
     copyHashJSON, setHashView, sortHashTable, renderHashTableCell,
-} from '../composables/useIOCScan.js';
+} from '../composables/useIOCScan.js?v=12';
 
 const { defineComponent } = Vue;
 

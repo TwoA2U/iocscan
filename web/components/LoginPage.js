@@ -1,7 +1,7 @@
 import {
     login,
     authError,
-} from '../composables/useAuth.js';
+} from '../composables/useAuth.js?v=12';
 
 const { defineComponent, ref } = Vue;
 

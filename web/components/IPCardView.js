@@ -14,7 +14,7 @@ import {
     tableSortCol, tableSortAsc,
     abuseColor, vtStatPart, riskDotColor, yn,
     copyJSON, setView, switchTab, switchToCard, sortTable, renderTableCell,
-} from '../composables/useIOCScan.js';
+} from '../composables/useIOCScan.js?v=12';
 
 const { defineComponent } = Vue;
 

@@ -5,9 +5,9 @@ import {
     changePassword,
     loadMaskedKeys,
     saveKeys,
-} from '../composables/useAuth.js';
+} from '../composables/useAuth.js?v=12';
 
-import { resetScanState } from '../composables/useIOCScan.js';
+import { resetScanState } from '../composables/useIOCScan.js?v=12';
 
 const { defineComponent, ref, reactive, onMounted } = Vue;
 
