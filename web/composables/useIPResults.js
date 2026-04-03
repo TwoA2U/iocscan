@@ -260,6 +260,7 @@ export const TABLE_COLS = [
     { key: 'vtMalicious',          label: 'VT Malicious',   vis: 'field:vt-malicious',  get: d => d.virustotal?.malicious ?? '—' },
     { key: 'vtSuspicious',         label: 'VT Suspicious',  vis: 'field:vt-suspicious', get: d => d.virustotal?.suspicious ?? '—' },
     { key: 'vtReputation',         label: 'VT Reputation',  vis: 'vt',                  get: d => d.virustotal?.reputation ?? '—' },
+    { key: 'vtLastAnalysis',       label: 'VT Last Scan',   vis: 'field:vt-lastanalysis', get: d => d.virustotal?.lastAnalysisDate || '—' },
     { key: 'link_virustotal',      label: 'VT Link',        vis: 'field:link-vt',       get: d => d.links?.virustotal || '' },
     { key: 'link_abuseipdb',       label: 'AbuseIPDB Link', vis: 'field:link-abuse',    get: d => d.links?.abuseipdb || '' },
     { key: 'link_ipapi',           label: 'IPAPI Link',     vis: 'field:link-ipapi',    get: d => d.links?.ipapi || '' },

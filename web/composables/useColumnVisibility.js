@@ -23,14 +23,14 @@ export const fieldVisible = reactive({
     'net-public':true,'net-wl':true,'net-hostnames':true,
     'ab-score':true,'ab-meter':true,'ab-reports':true,'ab-lastreport':true,
     'vt-malicious':true,'vt-suspicious':true,'vt-harmless':true,
-    'vt-undetected':true,'vt-summary':true,
+    'vt-undetected':true,'vt-summary':true,'vt-lastanalysis':true,
     'link-vt':true,'link-abuse':true,'link-ipapi':true,
 });
 
 const SECTION_FIELDS = {
     network: ['net-ip','net-isp','net-country','net-city','net-tz','net-localtime','net-company','net-companytype','net-companydomain','net-abuserscore','net-vpnservice','net-vpntype','net-vpn','net-proxy','net-tor','net-datacenter','net-crawler','net-abuser','net-bogon','net-mobile','net-satellite','net-public','net-wl','net-hostnames'],
     abuse:   ['ab-score','ab-meter','ab-reports','ab-lastreport'],
-    vt:      ['vt-malicious','vt-suspicious','vt-harmless','vt-undetected','vt-summary'],
+    vt:      ['vt-malicious','vt-suspicious','vt-harmless','vt-undetected','vt-summary','vt-lastanalysis'],
     links:   ['link-vt','link-abuse','link-ipapi'],
 };
 
@@ -233,6 +233,7 @@ export function makeIpDrawerSections(allResults, activeIdx) {
         { key:'vt-harmless',   label:'🟢 Harmless',   present:d.virustotal!=null },
         { key:'vt-undetected', label:'⬜ Undetected', present:d.virustotal!=null },
         { key:'vt-summary',    label:'Summary S/U/H', present:d.virustotal!=null },
+        { key:'vt-lastanalysis', label:'Last Scan',     present:!!d.virustotal?.lastAnalysisDate },
     ].filter(f => f.present);
     if (vtFields.length) sections.push({ key:'vt', icon:'🧪', label:'VirusTotal', fields:vtFields });
     const linkFields = [
