@@ -87,7 +87,6 @@ type IPAPIResponse struct {
 		City        string `json:"city"`
 		Timezone    string `json:"timezone"`
 		LocalTime   string `json:"local_time"`
-		IsDST       bool   `json:"is_dst"`
 	} `json:"location"`
 }
 
@@ -226,7 +225,6 @@ func ipapiToResult(r *IPAPIResponse) *Result {
 		"state":         r.Location.State,
 		"timezone":      r.Location.Timezone,
 		"localTime":     r.Location.LocalTime,
-		"isDST":         r.Location.IsDST,
 		"org":           r.ASN.Org,
 		"companyName":   r.Company.Name,
 		"companyType":   r.Company.Type,
@@ -236,7 +234,7 @@ func ipapiToResult(r *IPAPIResponse) *Result {
 		"isMobile":      r.IsMobile,
 		"isSatellite":   r.IsSatellite,
 		"isCrawler": func() bool {
-			if r.IsCrawler == "false" {
+			if r.IsCrawler == false {
 				return false
 			} else {
 				return true
