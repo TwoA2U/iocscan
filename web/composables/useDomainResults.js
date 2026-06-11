@@ -114,7 +114,8 @@ const reDomain = /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]
 const reIPv4   = /^(\d{1,3}\.){3}\d{1,3}$/;
 
 export function extractDomains(text) {
-    const tokens = text.split(/[\s,;\n\r\t]+/).map(t => t.trim()).filter(Boolean);
+    const normalized = String(text || '').replace(/\[\.\]/g, '.');
+    const tokens = normalized.split(/[\s,;\n\r\t]+/).map(t => t.trim()).filter(Boolean);
     const seen = new Set();
     const result = [];
     for (const t of tokens) {

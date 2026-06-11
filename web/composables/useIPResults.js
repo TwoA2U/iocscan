@@ -341,7 +341,8 @@ export function renderTableCell(col, row, i) {
 export function extractIPs(text) {
     const ipv4 = /\b(25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)\.(25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)\.(25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)\.(25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)\b/g;
     const ipv6 = /\b([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b/g;
-    const found = [...(text.match(ipv4) || []), ...(text.match(ipv6) || [])];
+    const normalized = String(text || '').replace(/\[\.\]/g, '.');
+    const found = [...(normalized.match(ipv4) || []), ...(normalized.match(ipv6) || [])];
     return [...new Map(found.map(ip => [ip, ip])).values()];
 }
 

@@ -272,8 +272,11 @@ export function vtStatPart(idx) {
 // ─── API calls ────────────────────────────────────────────────────────────────
 
 export async function doIPScan() {
-    const ip = ipInputText.value.trim();
-    if (!ip) { IPResults.ipError.value = 'Enter at least one IP address.'; return; }
+    const ips = IPResults.extractIPs(ipInputText.value);
+    if (!ips.length) { IPResults.ipError.value = 'Enter at least one IP address.'; return; }
+    const ip = ips.join('\n');
+    ipInputText.value = ip;
+    IPResults.ipBulkCount.value = ips.length;
     IPResults.ipError.value = '';
     isIPLoading.value = true;
     try {
@@ -306,6 +309,8 @@ export async function doHashScanAction() {
     if (!raw) { HashResults.hashError.value = 'Please enter at least one hash.'; return; }
     const hashes = HashResults.extractHashes(raw);
     if (!hashes.length) { HashResults.hashError.value = 'No valid MD5/SHA1/SHA256 hashes found.'; return; }
+    hashInputText.value = hashes.join('\n');
+    HashResults.hashBulkCount.value = hashes.length;
     HashResults.hashError.value = '';
     isHashLoading.value = true;
     try {
@@ -336,6 +341,8 @@ export async function doDomainScan() {
     if (!raw) { DomainResults.domainError.value = 'Enter at least one domain.'; return; }
     const domains = DomainResults.extractDomains(raw);
     if (!domains.length) { DomainResults.domainError.value = 'No valid domains found.'; return; }
+    DomainResults.domainInputText.value = domains.join('\n');
+    DomainResults.domainBulkCount.value = domains.length;
     DomainResults.domainError.value = '';
     DomainResults.isDomainLoading.value = true;
     try {

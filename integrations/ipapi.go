@@ -11,26 +11,60 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strconv"
+	"strings"
 
 	"github.com/TwoA2U/iocscan/internal/httpclient"
 )
 
 const ipapiEndpoint = "https://api.ipapi.is"
 
+type flexibleBool bool
+
+func (b *flexibleBool) UnmarshalJSON(data []byte) error {
+	var raw any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	switch v := raw.(type) {
+	case bool:
+		*b = flexibleBool(v)
+	case string:
+		s := strings.TrimSpace(strings.ToLower(v))
+		if s == "" || s == "false" || s == "0" || s == "no" || s == "none" || s == "null" {
+			*b = false
+			return nil
+		}
+		if parsed, err := strconv.ParseBool(s); err == nil {
+			*b = flexibleBool(parsed)
+			return nil
+		}
+		*b = true
+	case float64:
+		*b = flexibleBool(v != 0)
+	case nil:
+		*b = false
+	default:
+		*b = false
+	}
+	return nil
+}
+
 // IPAPIResponse is the raw response from ipapi.is.
 type IPAPIResponse struct {
-	IP      string `json:"ip"`
-	RIR     string `json:"rir"`
-	IsBogon bool   `json:"is_bogon"`
-	IsMobile bool  `json:"is_mobile"`
-	IsSatellite bool `json:"is_satellite"`
-	IsCrawler bool `json:"is_crawler"`
-	IsDatacenter bool `json:"is_datacenter"`
-	IsTor bool `json:"is_tor"`
-	IsProxy bool `json:"is_proxy"`
-	IsVPN bool `json:"is_vpn"`
-	IsAbuser bool `json:"is_abuser"`
-	VPN struct {
+	IP           string       `json:"ip"`
+	RIR          string       `json:"rir"`
+	IsBogon      bool         `json:"is_bogon"`
+	IsMobile     bool         `json:"is_mobile"`
+	IsSatellite  bool         `json:"is_satellite"`
+	IsCrawler    flexibleBool `json:"is_crawler"`
+	IsDatacenter bool         `json:"is_datacenter"`
+	IsTor        bool         `json:"is_tor"`
+	IsProxy      bool         `json:"is_proxy"`
+	IsVPN        bool         `json:"is_vpn"`
+	IsAbuser     bool         `json:"is_abuser"`
+	VPN          struct {
 		Service     string `json:"service"`
 		Type        string `json:"type"`
 		LastSeenStr string `json:"last_seen_str"`
@@ -47,13 +81,13 @@ type IPAPIResponse struct {
 		Org string `json:"org"`
 	} `json:"asn"`
 	Location struct {
-		Country    string `json:"country"`
+		Country     string `json:"country"`
 		CountryCode string `json:"country_code"`
-		State      string `json:"state"`
-		City       string `json:"city"`
-		Timezone   string `json:"timezone"`
-		LocalTime  string `json:"local_time"`
-		IsDST      bool   `json:"is_dst"`
+		State       string `json:"state"`
+		City        string `json:"city"`
+		Timezone    string `json:"timezone"`
+		LocalTime   string `json:"local_time"`
+		IsDST       bool   `json:"is_dst"`
 	} `json:"location"`
 }
 
@@ -186,28 +220,28 @@ func (i IPAPIIntegration) Run(ctx context.Context, ioc, apiKey string, useCache 
 
 func ipapiToResult(r *IPAPIResponse) *Result {
 	return &Result{Fields: map[string]any{
-		"country":      r.Location.Country,
-		"city":         r.Location.City,
-		"state":        r.Location.State,
-		"timezone":     r.Location.Timezone,
-		"localTime":    r.Location.LocalTime,
-		"isDST":        r.Location.IsDST,
-		"org":          r.ASN.Org,
-		"companyName":  r.Company.Name,
-		"companyType":  r.Company.Type,
+		"country":       r.Location.Country,
+		"city":          r.Location.City,
+		"state":         r.Location.State,
+		"timezone":      r.Location.Timezone,
+		"localTime":     r.Location.LocalTime,
+		"isDST":         r.Location.IsDST,
+		"org":           r.ASN.Org,
+		"companyName":   r.Company.Name,
+		"companyType":   r.Company.Type,
 		"companyDomain": r.Company.Domain,
-		"abuserScore":  r.Company.AbuserScore,
-		"isBogon":      r.IsBogon,
-		"isMobile":     r.IsMobile,
-		"isSatellite":  r.IsSatellite,
-		"isCrawler":    r.IsCrawler,
-		"isDatacenter": r.IsDatacenter,
-		"isTor":        r.IsTor,
-		"isProxy":      r.IsProxy,
-		"isVPN":        r.IsVPN,
-		"isAbuser":     r.IsAbuser,
-		"vpnService":   r.VPN.Service,
-		"vpnType":      r.VPN.Type,
-		"vpnLastSeen":  r.VPN.LastSeenStr,
+		"abuserScore":   r.Company.AbuserScore,
+		"isBogon":       r.IsBogon,
+		"isMobile":      r.IsMobile,
+		"isSatellite":   r.IsSatellite,
+		"isCrawler":     bool(r.IsCrawler),
+		"isDatacenter":  r.IsDatacenter,
+		"isTor":         r.IsTor,
+		"isProxy":       r.IsProxy,
+		"isVPN":         r.IsVPN,
+		"isAbuser":      r.IsAbuser,
+		"vpnService":    r.VPN.Service,
+		"vpnType":       r.VPN.Type,
+		"vpnLastSeen":   r.VPN.LastSeenStr,
 	}}
 }

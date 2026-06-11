@@ -315,13 +315,6 @@ export default defineComponent({
   <!-- ══ PAGE BODY ══════════════════════════════════════════════════ -->
   <div class="px-8 py-8 pb-20" id="shell">
 
-    <div class="keys-panel">
-      <span class="keys-panel-label">API Keys</span>
-      <div class="text-sm text-t2">
-        API keys are managed in Settings for the signed-in account.
-      </div>
-    </div>
-
     <!-- Mode tabs -->
     <div class="flex border-b border-white/[0.08] mb-6">
       <button class="ioc-tab" :class="{active: currentIOCMode==='ip'}"   @click="switchIOCMode('ip')">IP Address</button>
