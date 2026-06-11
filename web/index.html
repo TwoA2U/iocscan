@@ -1812,6 +1812,47 @@
                 --ag-row-height: 36px;
                 --ag-list-item-height: 28px;
             }
+
+            /* ── AG Grid compact overrides ── */
+            .ag-table-toolbar {
+                padding: 6px 10px;
+                gap: 6px;
+            }
+
+            .ag-quick-filter {
+                min-width: 0; /* was 240px — kills the dead gap */
+                flex: 1 1 0; /* stretches to fill all available space */
+                font-size: 0.66rem;
+                padding: 6px 10px;
+            }
+
+            .ag-ioc-grid {
+                --ag-header-height: 30px;
+                --ag-row-height: 28px;
+                --ag-list-item-height: 24px;
+                --ag-font-size: 11px;
+            }
+
+            .ag-ioc-grid .ag-cell {
+                font-size: 0.64rem;
+                padding-top: 0;
+                padding-bottom: 0;
+            }
+
+            .ag-ioc-grid .ag-header-cell-label {
+                font-size: 0.54rem;
+            }
+
+            .ag-ioc-grid .ag-floating-filter-full-body input {
+                height: 20px;
+                font-size: 0.6rem;
+                padding: 0 5px;
+            }
+
+            .ag-ioc-grid .ag-floating-filter {
+                height: 24px;
+            }
+
             .ag-ioc-grid .ag-cell {
                 display: flex;
                 align-items: center;
