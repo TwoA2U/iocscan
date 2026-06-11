@@ -6,7 +6,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import ColumnDrawer from './ColumnDrawer.js?v=12';
-import ResultsTable from './ResultsTable.js?v=12';
+import AgResultsTable from './AgResultsTable.js?v=12';
 import IntegrationCard from './IntegrationCard.js?v=12';
 import {
     currentUser,
@@ -49,7 +49,7 @@ import {
     toggleCopyMenu, toggleHashCopyMenu,
     copyClipboard, copyHashClipboard,
     exportCSV, exportJSON, exportHashCSV, exportHashJSON,
-    sortTable, renderTableCell, sortHashTable, renderHashTableCell,
+    sortTable, renderTableCell, sortHashTable, renderHashTableCell, getHashCellVal,
     // Domain
     allDomainResults, activeDomainIdx, activeDomainResult, activeDomainEntry,
     activeDomainFallbackCards,
@@ -78,7 +78,7 @@ const CACHE_SOURCE_LABELS = {
 
 export default defineComponent({
     name: 'IOCScanner',
-    components: { ColumnDrawer, ResultsTable, IntegrationCard },
+    components: { ColumnDrawer, AgResultsTable, IntegrationCard },
 
     setup() {
         async function logoutNow() {
@@ -227,7 +227,7 @@ export default defineComponent({
             toggleCopyMenu, toggleHashCopyMenu,
             copyClipboard, copyHashClipboard,
             exportCSV, exportJSON, exportHashCSV, exportHashJSON,
-            sortTable, renderTableCell, sortHashTable, renderHashTableCell,
+            sortTable, renderTableCell, sortHashTable, renderHashTableCell, getHashCellVal,
             // Domain
             allDomainResults, activeDomainIdx, activeDomainResult, activeDomainEntry,
             activeDomainFallbackCards,
@@ -681,12 +681,11 @@ export default defineComponent({
 
         <!-- ── TABLE VIEW ── -->
         <div v-show="currentView==='table'">
-          <results-table
-            :visible-cols="visibleTableCols" :sorted-rows="sortedTableRows"
-            :sort-col="tableSortCol" :sort-asc="tableSortAsc"
+          <ag-results-table
+            :visible-cols="visibleTableCols" :rows="sortedTableRows"
             :render-cell="renderTableCell"
-            @sort="sortTable" @row-click="row => switchToCard(row._idx)">
-          </results-table>
+            @row-click="row => switchToCard(row._idx)">
+          </ag-results-table>
         </div>
       </div>
     </div>
@@ -1023,13 +1022,12 @@ export default defineComponent({
 
         <!-- ── HASH TABLE ── -->
         <div v-show="hashView==='table'">
-          <results-table
-            :visible-cols="visibleHashTableCols" :sorted-rows="sortedHashRows"
-            :sort-col="hashSortCol" :sort-asc="hashSortAsc"
+          <ag-results-table
+            :visible-cols="visibleHashTableCols" :rows="sortedHashRows"
             :render-cell="renderHashTableCell"
-            @sort="sortHashTable"
+            :get-value="getHashCellVal"
             @row-click="row => { activeHashIdx = row._idx; setHashView('cards'); }">
-          </results-table>
+          </ag-results-table>
         </div>
       </div>
 
@@ -1261,14 +1259,12 @@ export default defineComponent({
         </div>
 
         <!-- Table view -->
-        <div v-show="domainView==='table'" class="overflow-x-auto animate-fade-up">
-          <results-table
-            :visible-cols="visibleDomainTableCols" :sorted-rows="sortedDomainRows"
-            :sort-col="domainSortCol" :sort-asc="domainSortAsc"
+        <div v-show="domainView==='table'" class="animate-fade-up">
+          <ag-results-table
+            :visible-cols="visibleDomainTableCols" :rows="sortedDomainRows"
             :render-cell="renderDomainTableCell"
-            @sort="sortDomainTable"
             @row-click="row => { activeDomainIdx=row._idx; setDomainView('cards'); }">
-          </results-table>
+          </ag-results-table>
         </div>
       </div>
 
