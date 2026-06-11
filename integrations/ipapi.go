@@ -53,17 +53,17 @@ func (b *flexibleBool) UnmarshalJSON(data []byte) error {
 
 // IPAPIResponse is the raw response from ipapi.is.
 type IPAPIResponse struct {
-	IP           string       `json:"ip"`
-	RIR          string       `json:"rir"`
-	IsBogon      bool         `json:"is_bogon"`
-	IsMobile     bool         `json:"is_mobile"`
-	IsSatellite  bool         `json:"is_satellite"`
-	IsCrawler    flexibleBool `json:"is_crawler"`
-	IsDatacenter bool         `json:"is_datacenter"`
-	IsTor        bool         `json:"is_tor"`
-	IsProxy      bool         `json:"is_proxy"`
-	IsVPN        bool         `json:"is_vpn"`
-	IsAbuser     bool         `json:"is_abuser"`
+	IP           string      `json:"ip"`
+	RIR          string      `json:"rir"`
+	IsBogon      bool        `json:"is_bogon"`
+	IsMobile     bool        `json:"is_mobile"`
+	IsSatellite  bool        `json:"is_satellite"`
+	IsCrawler    interface{} `json:"is_crawler"`
+	IsDatacenter bool        `json:"is_datacenter"`
+	IsTor        bool        `json:"is_tor"`
+	IsProxy      bool        `json:"is_proxy"`
+	IsVPN        bool        `json:"is_vpn"`
+	IsAbuser     bool        `json:"is_abuser"`
 	VPN          struct {
 		Service     string `json:"service"`
 		Type        string `json:"type"`
@@ -157,6 +157,7 @@ func (i IPAPIIntegration) Manifest() Manifest {
 				{Key: "companyDomain", Label: "Domain", Type: FieldTypeString},
 				{Key: "vpnService", Label: "VPN Service", Type: FieldTypeString},
 				{Key: "vpnType", Label: "VPN Type", Type: FieldTypeString},
+				{Key: "crawlerString", Label: "Crawler String", Type: FieldTypeString},
 				{
 					Key:   "companyType",
 					Label: "Company Type",
@@ -234,14 +235,27 @@ func ipapiToResult(r *IPAPIResponse) *Result {
 		"isBogon":       r.IsBogon,
 		"isMobile":      r.IsMobile,
 		"isSatellite":   r.IsSatellite,
-		"isCrawler":     bool(r.IsCrawler),
-		"isDatacenter":  r.IsDatacenter,
-		"isTor":         r.IsTor,
-		"isProxy":       r.IsProxy,
-		"isVPN":         r.IsVPN,
-		"isAbuser":      r.IsAbuser,
-		"vpnService":    r.VPN.Service,
-		"vpnType":       r.VPN.Type,
-		"vpnLastSeen":   r.VPN.LastSeenStr,
+		"isCrawler": func() bool {
+			if r.IsCrawler == "false" {
+				return false
+			} else {
+				return true
+			}
+		}(),
+		"crawlerString": func() string {
+			if r.IsCrawler != false {
+				return r.IsCrawler.(string)
+			} else {
+				return ""
+			}
+		}(),
+		"isDatacenter": r.IsDatacenter,
+		"isTor":        r.IsTor,
+		"isProxy":      r.IsProxy,
+		"isVPN":        r.IsVPN,
+		"isAbuser":     r.IsAbuser,
+		"vpnService":   r.VPN.Service,
+		"vpnType":      r.VPN.Type,
+		"vpnLastSeen":  r.VPN.LastSeenStr,
 	}}
 }
