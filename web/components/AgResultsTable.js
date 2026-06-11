@@ -70,7 +70,7 @@ export default defineComponent({
         sortable: true,
         resizable: true,
         filter: "agTextColumnFilter",
-        floatingFilter: true,
+        floatingFilter: false,
         minWidth: col.key === "#" ? 82 : 150,
         maxWidth: col.key === "#" ? 100 : undefined,
         valueGetter: (params) =>
@@ -88,7 +88,7 @@ export default defineComponent({
           sortable: true,
           resizable: true,
           filter: "agTextColumnFilter",
-          floatingFilter: true,
+          floatingFilter: false,
         },
         suppressCellFocus: true,
         animateRows: false,
